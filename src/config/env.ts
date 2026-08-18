@@ -7,7 +7,7 @@
  * 诊断快照只输出相关变量的 set/unset 状态，**绝不回显变量值**（防密钥泄漏）。
  */
 
-import type { ZodObject, ZodRawShape, output } from "zod";
+import { z } from "zod";
 
 /** 环境变量校验失败（message 附带诊断快照） */
 export class EnvConfigError extends Error {
@@ -28,28 +28,72 @@ export class EnvConfigError extends Error {
  * const env = loadEnv(envSchema);
  * ```
  */
-export function defineEnv<S extends ZodObject<ZodRawShape>>(schema: S): S {
+export function defineEnv<S extends z.ZodType>(schema: S): S {
   return schema;
+}
+
+/** loadEnv 选项 */
+export interface LoadEnvOptions {
+  /**
+   * legacy 别名映射：规范 key → 旧变量名列表（过渡兼容用，文档标注 v0.3 移除）。
+   * 仅当规范 key 未设置时回退读取旧名；诊断快照只列规范名。
+   *
+   * ```ts
+   * loadEnv(authCenterFacet, {
+   *   aliases: { AUTH_CENTER_URL: ["AUTH_SERVER_URL"] },
+   * });
+   * ```
+   */
+  aliases?: Record<string, string[]>;
+}
+
+/**
+ * 生成 env 变量的 set/unset 指纹（**不含变量值**）。
+ * 供 loadEnv 诊断快照与 /ops 运维报告复用。
+ */
+export function envSnapshot(
+  env: Record<string, string | undefined>,
+  keys: string[]
+): Record<string, "set" | "unset"> {
+  const snapshot: Record<string, "set" | "unset"> = {};
+  for (const key of keys) {
+    snapshot[key] = env[key] !== undefined ? "set" : "unset";
+  }
+  return snapshot;
+}
+
+/** 提取 schema 顶层 key（用于诊断快照/运维指纹） */
+function schemaKeys(schema: z.ZodType): string[] {
+  if (schema instanceof z.ZodObject) {
+    return Object.keys(schema.shape);
+  }
+  return [];
 }
 
 /**
  * 用 schema 解析 process.env。
  *
- * 失败时抛出 EnvConfigError，message 包含：
- * 1. 各校验问题的路径与描述
- * 2. 诊断快照（schema 顶层 key 的 set/unset 状态，不含变量值）
+ * - `aliases`：规范 key 未设置时回退 legacy 别名（见 LoadEnvOptions）
+ * - 失败时抛出 EnvConfigError，message 包含：
+ *   1. 各校验问题的路径与描述
+ *   2. 诊断快照（schema 顶层 key 的 set/unset 状态，不含变量值）
  */
-export function loadEnv<S extends ZodObject<ZodRawShape>>(
-  schema: S
-): output<S> {
-  const result = schema.safeParse(process.env);
+export function loadEnv<S extends z.ZodType>(
+  schema: S,
+  options?: LoadEnvOptions
+): z.output<S> {
+  const env = options?.aliases
+    ? applyAliases(process.env, options.aliases)
+    : process.env;
+
+  const result = schema.safeParse(env);
   if (result.success) {
     return result.data;
   }
 
-  const keys = Object.keys(schema.shape);
-  const snapshot = keys
-    .map((k) => `${k}=${process.env[k] !== undefined ? "***set***" : "(unset)"}`)
+  const keys = schemaKeys(schema);
+  const snapshot = Object.entries(envSnapshot(env, keys))
+    .map(([k, v]) => `${k}=${v === "set" ? "***set***" : "(unset)"}`)
     .join(", ");
   const issues = result.error.issues
     .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
@@ -59,4 +103,26 @@ export function loadEnv<S extends ZodObject<ZodRawShape>>(
     `[service-kit/config] Env validation failed: ${issues}. ` +
       `Diagnostic snapshot: { ${snapshot} }`
   );
+}
+
+/**
+ * 应用 legacy 别名：构建 env 拷贝，规范 key 未设置时回退到别名值。
+ * 不修改 process.env（避免全局副作用）。
+ */
+function applyAliases(
+  env: Record<string, string | undefined>,
+  aliases: Record<string, string[]>
+): Record<string, string | undefined> {
+  const result = { ...env };
+  for (const [canonical, legacyList] of Object.entries(aliases)) {
+    if (result[canonical] === undefined) {
+      for (const legacy of legacyList) {
+        if (env[legacy] !== undefined) {
+          result[canonical] = env[legacy];
+          break;
+        }
+      }
+    }
+  }
+  return result;
 }

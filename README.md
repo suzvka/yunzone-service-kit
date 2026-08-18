@@ -1,6 +1,6 @@
 # yunzone-service-kit
 
-云洲服务集群通用基础设施：**插件式 Provider 注册中心基座**（`/registry`）与**运行时配置层**（`/config`）。
+云洲服务集群通用基础设施：**插件式 Provider 注册中心基座**（`/registry`）、**运行时配置层**（`/config`）与**运维数据接口**（`/ops`）。
 
 纯 TypeScript 实现，零框架耦合（不依赖 Next.js/React），任何 Node 服务可直接引用。
 
@@ -31,23 +31,73 @@ const status = await registry.getStatus(); // { registeredCount, availableCount,
 
 ### `/config` — 运行时配置层
 
-| 导出 | 说明 |
-|---|---|
-| `defineEnv` / `loadEnv` / `EnvConfigError` | zod 环境变量契约声明与懒解析；失败抛出带诊断快照的错误（**只显示 set/unset，不回显变量值**） |
-| `resolveDatabaseUrl` | 数据库连接 URL 解析：`DATABASE_PROVIDER` 显式选择 `postgres`（`DATABASE_URL`）/ `coze`（Coze 平台 PG 变量组），不自动嗅探 |
-| `resolveBaseUrl` | 服务对外 baseUrl 解析链：`BETTER_AUTH_URL` →（DEV 回退）→ `COZE_PROJECT_DOMAIN_DEFAULT` → fallback |
+#### 环境变量分面规范（Env Facets）
+
+环境变量按"服务角色"分面声明，服务用 `composeFacets` 组合自己需要的面：
+
+| 分面 | 变量 | 说明 |
+|------|------|------|
+| `deploymentFacet` | `COZE_PROJECT_ENV`、`COZE_PROJECT_DOMAIN_DEFAULT`、`HOSTNAME`、`DEPLOY_RUN_PORT`、`PORT`、`COZE_WORKSPACE_PATH` | 部署环境（平台注入） |
+| `authCenterFacet` | `AUTH_CENTER_URL`、`AUTH_CENTER_API_KEY`、`AUTH_CENTER_PRODUCT_ID` | 鉴权中心三要素（规范名） |
+| `userCenterFacet` | `USER_CENTER_URL`、`NEXT_PUBLIC_USER_CENTER_URL`、`USER_CENTER_API_KEY`（预留） | 用户中心地址与凭证 |
+| `adminFacet` | `ADMIN_PASSWORD`、`ADMIN_PATH`（默认 `/admin`） | 管理后台；**未设置密码 = 禁用（503）** |
 
 ```ts
-import { defineEnv, loadEnv } from "yunzone-service-kit/config";
-import { z } from "zod";
+import {
+  adminFacet,
+  authCenterFacet,
+  composeFacets,
+  deploymentFacet,
+  requiredFacet,
+  userCenterFacet,
+} from "yunzone-service-kit/config";
 
-const envSchema = defineEnv(
-  z.object({
-    STORAGE_PROVIDER: z.string(),
-    COZE_BUCKET_NAME: z.string().optional(),
-  })
-);
-const env = loadEnv(envSchema);
+// 组合分面（重复 key 抛错；全部 optional，缺省降级）
+const envSchema = composeFacets(deploymentFacet, authCenterFacet, userCenterFacet, adminFacet);
+
+// 模块级必填（如鉴权中心客户端三要素）
+const authCenterEnvSchema = requiredFacet(authCenterFacet, [
+  "AUTH_CENTER_URL",
+  "AUTH_CENTER_API_KEY",
+  "AUTH_CENTER_PRODUCT_ID",
+]);
+const env = loadEnv(authCenterEnvSchema);
+```
+
+**legacy 别名**：`loadEnv(schema, { aliases })` 支持旧变量名过渡（规范 key 未设置时回退），诊断快照只列规范名、不回显值：
+
+```ts
+// AUTH_SERVER_* 将在 v0.3 移除
+loadEnv(authCenterFacet, {
+  aliases: { AUTH_CENTER_URL: ["AUTH_SERVER_URL"] },
+});
+```
+
+#### 其他解析工具
+
+| 导出 | 说明 |
+|---|---|
+| `defineEnv` / `loadEnv` / `EnvConfigError` / `envSnapshot` | zod 环境变量契约声明与懒解析；失败抛出带诊断快照的错误（**只显示 set/unset，不回显变量值**） |
+| `resolveDatabaseUrl` | 数据库连接 URL 解析：`DATABASE_PROVIDER` 显式选择 `postgres`（`DATABASE_URL`）/ `coze`（Coze 平台 PG 变量组），不自动嗅探 |
+| `resolveBaseUrl` | 服务对外 baseUrl 解析链：`BETTER_AUTH_URL` →（DEV 回退）→ `COZE_PROJECT_DOMAIN_DEFAULT` → fallback |
+| `resolveListenAddress` | 监听地址：`HOSTNAME`（默认 `0.0.0.0`）+ `DEPLOY_RUN_PORT`/`PORT`（默认 `5000`） |
+
+### `/ops` — 运维数据接口（纯逻辑层）
+
+- `createOpsReporter({ name, version })`：聚合服务信息、部署信息、注册中心状态快照、env set/unset 指纹（**不含变量值**）
+- `resolveAdminConfig` / `verifyAdminToken` / `createAdminSession` / `validateAdminSession`：管理后台公共逻辑（密码校验常量时间比较、会话含过期检查）
+- **不提供 HTTP 端点**（零框架耦合）：服务自建路由，3 行封装 `/ops`：
+
+```ts
+import { createOpsReporter } from "yunzone-service-kit/ops";
+
+const reporter = createOpsReporter({ name: "user-center", version: "1.2.3" });
+reporter.addRegistry("captcha", captchaRegistry);
+reporter.setEnvKeys(["AUTH_CENTER_URL", "COZE_SUPABASE_URL"]);
+
+export async function GET() {
+  return Response.json(await reporter.report());
+}
 ```
 
 ## 开发
@@ -64,6 +114,7 @@ pnpm build      # tsup 构建（ESM + CJS + DTS）
 - 版本策略：`0.x` 快速迭代，手动 bump `package.json` 版本后打 GitHub Release（tag = `v0.x.y`）
 - 发布流程：GitHub Release published 触发 [publish.yml](.github/workflows/publish.yml)，通过 OIDC 自动发布到 npmjs（public）
 - 消费者安装：`pnpm add yunzone-service-kit`
+- 本地开发联调：`pnpm add link:../yunzone-service-kit`（实时指向源目录 dist，发布后切回 `^0.x.y`）
 
 ## License
 

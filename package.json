@@ -1,7 +1,7 @@
 {
   "name": "yunzone-service-kit",
-  "version": "0.1.0",
-  "description": "云洲服务集群通用基础设施：插件式注册中心基座（/registry）与运行时配置层（/config）",
+  "version": "0.2.0",
+  "description": "云洲服务集群通用基础设施：插件式注册中心基座（/registry）、运行时配置层（/config）与运维数据接口（/ops）",
   "license": "MIT",
   "private": false,
   "type": "module",
@@ -23,6 +23,11 @@
       "types": "./dist/config/index.d.ts",
       "import": "./dist/config/index.js",
       "require": "./dist/config/index.cjs"
+    },
+    "./ops": {
+      "types": "./dist/ops/index.d.ts",
+      "import": "./dist/ops/index.js",
+      "require": "./dist/ops/index.cjs"
     }
   },
   "files": [

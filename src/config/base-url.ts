@@ -41,3 +41,25 @@ export function resolveBaseUrl(options?: ResolveBaseUrlOptions): string {
 
   return env.COZE_PROJECT_DOMAIN_DEFAULT || fallback;
 }
+
+/** resolveListenAddress 参数 */
+export interface ResolveListenAddressOptions {
+  /** 环境变量来源（默认 process.env，可注入用于测试） */
+  env?: Record<string, string | undefined>;
+}
+
+/**
+ * 解析服务监听地址（host + port）
+ *
+ * 集群统一约定：
+ * - host：`HOSTNAME`，默认 `0.0.0.0`
+ * - port：`DEPLOY_RUN_PORT`（Coze 平台注入）优先，其次 `PORT`，默认 `5000`
+ */
+export function resolveListenAddress(
+  options?: ResolveListenAddressOptions
+): { host: string; port: number } {
+  const env = options?.env ?? process.env;
+  const host = env.HOSTNAME || "0.0.0.0";
+  const port = parseInt(env.DEPLOY_RUN_PORT || env.PORT || "5000", 10);
+  return { host, port };
+}
