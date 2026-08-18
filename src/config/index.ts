@@ -1,5 +1,5 @@
 /**
- * @yunzone/service-kit/config — 运行时配置层
+ * yunzone-service-kit/config — 运行时配置层
  */
 
 export { EnvConfigError, defineEnv, loadEnv } from "./env";

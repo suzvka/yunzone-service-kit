@@ -32,5 +32,5 @@ jobs:
       - name: Build package
         run: pnpm build
 
-      - name: Publish @yunzone/service-kit
+      - name: Publish yunzone-service-kit
         run: pnpm publish --access public --no-git-checks

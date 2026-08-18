@@ -1,4 +1,4 @@
-# @yunzone/service-kit
+# yunzone-service-kit
 
 云洲服务集群通用基础设施：**插件式 Provider 注册中心基座**（`/registry`）与**运行时配置层**（`/config`）。
 
@@ -15,7 +15,7 @@
 - 领域注册中心通过继承复用调度逻辑，可扩展 `describeProvider` 追加领域字段
 
 ```ts
-import { ProviderRegistry } from "@yunzone/service-kit/registry";
+import { ProviderRegistry } from "yunzone-service-kit/registry";
 
 class MyRegistry extends ProviderRegistry<MyProvider> {
   constructor() {
@@ -38,7 +38,7 @@ const status = await registry.getStatus(); // { registeredCount, availableCount,
 | `resolveBaseUrl` | 服务对外 baseUrl 解析链：`BETTER_AUTH_URL` →（DEV 回退）→ `COZE_PROJECT_DOMAIN_DEFAULT` → fallback |
 
 ```ts
-import { defineEnv, loadEnv } from "@yunzone/service-kit/config";
+import { defineEnv, loadEnv } from "yunzone-service-kit/config";
 import { z } from "zod";
 
 const envSchema = defineEnv(
@@ -63,7 +63,7 @@ pnpm build      # tsup 构建（ESM + CJS + DTS）
 
 - 版本策略：`0.x` 快速迭代，手动 bump `package.json` 版本后打 GitHub Release（tag = `v0.x.y`）
 - 发布流程：GitHub Release published 触发 [publish.yml](.github/workflows/publish.yml)，通过 OIDC 自动发布到 npmjs（public）
-- 消费者安装：`pnpm add @yunzone/service-kit`
+- 消费者安装：`pnpm add yunzone-service-kit`
 
 ## License
 

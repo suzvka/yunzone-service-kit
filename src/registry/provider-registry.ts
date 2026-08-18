@@ -9,7 +9,7 @@
  *
  * 使用方式：
  * ```ts
- * import { ProviderRegistry } from "@yunzone/service-kit/registry";
+ * import { ProviderRegistry } from "yunzone-service-kit/registry";
  *
  * class MyRegistry extends ProviderRegistry<MyProvider> {
  *   constructor() {
