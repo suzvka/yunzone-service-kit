@@ -1,0 +1,61 @@
+{
+  "name": "@yunzone/service-kit",
+  "version": "0.1.0",
+  "description": "云洲服务集群通用基础设施：插件式注册中心基座（/registry）与运行时配置层（/config）",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./registry": {
+      "types": "./dist/registry/index.d.ts",
+      "import": "./dist/registry/index.js",
+      "require": "./dist/registry/index.cjs"
+    },
+    "./config": {
+      "types": "./dist/config/index.d.ts",
+      "import": "./dist/config/index.js",
+      "require": "./dist/config/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "pnpm build",
+    "test": "vitest run",
+    "ts-check": "tsc -p tsconfig.json"
+  },
+  "keywords": [
+    "yunzone",
+    "service-kit",
+    "registry",
+    "config",
+    "provider",
+    "microservices"
+  ],
+  "peerDependencies": {
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsup": "^8.0.0",
+    "typescript": "^5",
+    "vitest": "^3.0.0",
+    "zod": "^4.3.5"
+  }
+}

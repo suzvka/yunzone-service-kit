@@ -1,0 +1,36 @@
+name: Publish Packages
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+# OIDC 核心：id-token 写权限，允许 Actions 向 npm 证明自身身份
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package
+        run: pnpm build
+
+      - name: Publish @yunzone/service-kit
+        run: pnpm publish --access public --no-git-checks
