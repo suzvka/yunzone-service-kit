@@ -33,16 +33,17 @@ export function defineEnv<S extends z.ZodType>(schema: S): S {
   return schema;
 }
 
-/** loadEnv 选项 */
+/**
+ * loadEnv 选项 */
 export interface LoadEnvOptions {
   /**
-   * legacy 别名映射：规范 key → 旧变量名列表（过渡兼容用，文档标注 v0.3 移除）。
+   * legacy 别名映射：规范 key → 旧变量名列表（过渡兼容用）。
    * 仅当规范 key 未设置时回退读取旧名；诊断快照只列规范名。
    *
+   * 部署面过渡（TICKET-001）直接用预构建的 deploymentAliases 常量：
+   *
    * ```ts
-   * loadEnv(authCenterFacet, {
-   *   aliases: { AUTH_CENTER_URL: ["AUTH_SERVER_URL"] },
-   * });
+   * loadEnv(deploymentFacet, { aliases: deploymentAliases });
    * ```
    */
   aliases?: Record<string, string[]>;
@@ -122,8 +123,10 @@ export function loadEnv<S extends z.ZodType>(
 /**
  * 应用 legacy 别名：构建 env 拷贝，规范 key 未设置时回退到别名值。
  * 不修改 process.env（避免全局副作用）。
+ *
+ * 内部共享：供部署适配层（./deploy）复用；不在公共 API 中导出。
  */
-function applyAliases(
+export function applyAliases(
   env: Record<string, string | undefined>,
   aliases: Record<string, string[]>
 ): Record<string, string | undefined> {

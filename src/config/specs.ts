@@ -5,8 +5,17 @@
  *
  * - 所有分面字段全部 optional：延续"通用 envSchema 全部 optional"约定（缺省降级/懒加载），
  *   需要必填的模块用 requiredFacet 声明独立子 schema。
- * - 规范名统一：鉴权中心三要素为 AUTH_CENTER_*（AUTH_SERVER_* 为 legacy 别名，
- *   通过 loadEnv 的 aliases 过渡，文档标注 v0.3 移除）。
+ * - 配置键命名规范（TICKET-001，三层命名空间模型）：
+ *   - 通用契约命名空间（本文件声明的键）：一律中立命名，禁止以任何平台名
+ *     （coze / vercel / render / aws 等）作为键名的一部分，平台差异通过键值分派
+ *     （DEPLOY_PROVIDER / DATABASE_PROVIDER）表达；
+ *   - 平台注入命名空间（COZE_*、PG* 等）：平台私有，项目不写入（loadDotEnv 默认
+ *     平台注入优先，私有值会被静默覆盖）、不提升进通用契约；
+ *   - 项目私有命名空间（服务自有 schema 扩展）：自由命名，但不得占用平台注入命名空间；
+ *   - 裸读禁令：禁止直接 process.env.COZE_* 裸读平台注入变量，必须经中立键
+ *     （通用契约 + deploymentAliases / normalizeDeployEnv）或自有 schema 显式声明接入。
+ * - 鉴权中心三要素规范名为 AUTH_CENTER_*（legacy 别名 AUTH_SERVER_* 已于 v0.4 移除，
+ *   兑现 0.2 声明的 v0.3 移除承诺）。
  * - 管理面语义：ADMIN_PASSWORD 未设置 = 管理后台禁用（503），禁止默认密码回退。
  */
 
@@ -15,14 +24,15 @@ import { z } from "zod";
 /** 环境变量分面（zod object） */
 export type EnvFacet<S extends z.ZodRawShape = z.ZodRawShape> = z.ZodObject<S>;
 
-/** ── 部署面：平台注入的部署环境变量（沿用现有命名，不引入新名） ── */
+/** ── 部署面：中立键（TICKET-001），平台差异经 DEPLOY_PROVIDER 分派 ── */
 export const deploymentFacet = z.object({
-  COZE_PROJECT_ENV: z.string().optional(),
-  COZE_PROJECT_DOMAIN_DEFAULT: z.string().optional(),
+  DEPLOY_ENV: z.string().optional(),
+  PROJECT_DOMAIN_DEFAULT: z.string().optional(),
+  PUBLIC_BASE_URL: z.string().optional(),
+  DEPLOY_PROVIDER: z.string().optional(),
   HOSTNAME: z.string().optional(),
-  DEPLOY_RUN_PORT: z.string().optional(),
   PORT: z.string().optional(),
-  COZE_WORKSPACE_PATH: z.string().optional(),
+  WORKSPACE_PATH: z.string().optional(),
 });
 
 /** ── 鉴权中心面（Token Authority Service）：规范名 AUTH_CENTER_* ── */

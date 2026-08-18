@@ -8,6 +8,7 @@ import {
   adminFacet,
   authCenterFacet,
   composeFacets,
+  deploymentAliases,
   deploymentFacet,
   envSnapshot,
   EnvConfigError,
@@ -21,16 +22,23 @@ afterEach(() => {
   delete process.env.AUTH_CENTER_URL;
   delete process.env.AUTH_CENTER_API_KEY;
   delete process.env.AUTH_CENTER_PRODUCT_ID;
-  delete process.env.AUTH_SERVER_URL;
-  delete process.env.AUTH_SERVER_API_KEY;
-  delete process.env.AUTH_SERVER_PRODUCT_ID;
+  delete process.env.DEPLOY_ENV;
+  delete process.env.PROJECT_DOMAIN_DEFAULT;
+  delete process.env.PUBLIC_BASE_URL;
+  delete process.env.DEPLOY_PROVIDER;
+  delete process.env.PORT;
+  delete process.env.WORKSPACE_PATH;
+  delete process.env.COZE_PROJECT_ENV;
+  delete process.env.COZE_PROJECT_DOMAIN_DEFAULT;
+  delete process.env.COZE_WORKSPACE_PATH;
+  delete process.env.DEPLOY_RUN_PORT;
 });
 
 describe("composeFacets", () => {
   it("组合多个分面并保留字段", () => {
     const schema = composeFacets(deploymentFacet, authCenterFacet, adminFacet);
     const keys = facetKeys(schema);
-    expect(keys).toContain("COZE_PROJECT_ENV");
+    expect(keys).toContain("DEPLOY_ENV");
     expect(keys).toContain("AUTH_CENTER_URL");
     expect(keys).toContain("ADMIN_PASSWORD");
     expect(keys).toContain("ADMIN_PATH");
@@ -98,59 +106,44 @@ describe("requiredFacet", () => {
 
 describe("loadEnv aliases（legacy 过渡）", () => {
   it("规范 key 未设置时回退 legacy 别名", () => {
-    process.env.AUTH_SERVER_URL = "https://legacy.example.com";
-    const env = loadEnv(authCenterFacet, {
-      aliases: { AUTH_CENTER_URL: ["AUTH_SERVER_URL"] },
-    });
-    expect(env.AUTH_CENTER_URL).toBe("https://legacy.example.com");
+    process.env.COZE_PROJECT_ENV = "PROD";
+    const env = loadEnv(deploymentFacet, { aliases: deploymentAliases });
+    expect(env.DEPLOY_ENV).toBe("PROD");
   });
 
   it("规范 key 优先于 legacy 别名", () => {
-    process.env.AUTH_CENTER_URL = "https://canonical.example.com";
-    process.env.AUTH_SERVER_URL = "https://legacy.example.com";
-    const env = loadEnv(authCenterFacet, {
-      aliases: { AUTH_CENTER_URL: ["AUTH_SERVER_URL"] },
-    });
-    expect(env.AUTH_CENTER_URL).toBe("https://canonical.example.com");
+    process.env.DEPLOY_ENV = "PROD";
+    process.env.COZE_PROJECT_ENV = "DEV";
+    const env = loadEnv(deploymentFacet, { aliases: deploymentAliases });
+    expect(env.DEPLOY_ENV).toBe("PROD");
   });
 
   it("aliases 不污染 process.env", () => {
-    process.env.AUTH_SERVER_URL = "https://legacy.example.com";
-    loadEnv(authCenterFacet, {
-      aliases: { AUTH_CENTER_URL: ["AUTH_SERVER_URL"] },
-    });
-    expect(process.env.AUTH_CENTER_URL).toBeUndefined();
+    process.env.COZE_PROJECT_ENV = "PROD";
+    loadEnv(deploymentFacet, { aliases: deploymentAliases });
+    expect(process.env.DEPLOY_ENV).toBeUndefined();
   });
 
   it("失败时诊断快照只列规范名（不回显 legacy 值）", () => {
-    process.env.AUTH_SERVER_API_KEY = "sk-super-secret";
-    const schema = requiredFacet(authCenterFacet, [
-      "AUTH_CENTER_URL",
-      "AUTH_CENTER_API_KEY",
-      "AUTH_CENTER_PRODUCT_ID",
+    process.env.COZE_PROJECT_ENV = "env-super-secret";
+    // DEPLOY_PROVIDER 不在 deploymentAliases 中，required 下必然 unset → 抛错
+    const schema = requiredFacet(deploymentFacet, [
+      "DEPLOY_ENV",
+      "DEPLOY_PROVIDER",
     ]);
 
     expect(() =>
-      loadEnv(schema, {
-        aliases: {
-          AUTH_CENTER_URL: ["AUTH_SERVER_URL"],
-          AUTH_CENTER_API_KEY: ["AUTH_SERVER_API_KEY"],
-        },
-      })
+      loadEnv(schema, { aliases: deploymentAliases })
     ).toThrowError(EnvConfigError);
     try {
-      loadEnv(schema, {
-        aliases: {
-          AUTH_CENTER_URL: ["AUTH_SERVER_URL"],
-          AUTH_CENTER_API_KEY: ["AUTH_SERVER_API_KEY"],
-        },
-      });
+      loadEnv(schema, { aliases: deploymentAliases });
     } catch (err) {
       const message = (err as Error).message;
       // 快照列出规范名（来自 alias 的值也算 set）
-      expect(message).toContain("AUTH_CENTER_API_KEY=***set***");
+      expect(message).toContain("DEPLOY_ENV=***set***");
+      expect(message).toContain("DEPLOY_PROVIDER=(unset)");
       // 不回显任何变量值
-      expect(message).not.toContain("sk-super-secret");
+      expect(message).not.toContain("env-super-secret");
     }
   });
 });

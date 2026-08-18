@@ -35,10 +35,10 @@ describe("createOpsReporter", () => {
       name: "test-service",
       version: "1.2.3",
       env: {
-        COZE_PROJECT_ENV: "PROD",
+        DEPLOY_ENV: "PROD",
         BETTER_AUTH_URL: "https://svc.example.com",
         HOSTNAME: "0.0.0.0",
-        DEPLOY_RUN_PORT: "8080",
+        PORT: "8080",
       },
     });
     reporter.setEnvKeys(["BETTER_AUTH_URL", "SECRET_KEY"]);
@@ -61,7 +61,37 @@ describe("createOpsReporter", () => {
     expect(report.registries).toEqual({});
   });
 
+  it("legacy 平台注入旧名经适配层映射（COZE_* / DEPLOY_RUN_PORT）", async () => {
+    const reporter = createOpsReporter({
+      name: "test-service",
+      version: "1.2.3",
+      env: {
+        COZE_PROJECT_ENV: "PROD",
+        DEPLOY_RUN_PORT: "8080",
+      },
+    });
+
+    const report = await reporter.report();
+    // deployment.env 展示中立键（来自 legacy 回退），端口回退自 DEPLOY_RUN_PORT
+    expect(report.deployment.env).toBe("PROD");
+    expect(report.deployment.port).toBe(8080);
+  });
+
   it("devFallback 语义：DEV 环境 baseUrl 回退到 localhost", async () => {
+    const reporter = createOpsReporter({
+      name: "test-service",
+      version: "0.0.0",
+      env: {
+        DEPLOY_ENV: "DEV",
+        PROJECT_DOMAIN_DEFAULT: "https://platform.example.com",
+      },
+    });
+
+    const report = await reporter.report();
+    expect(report.deployment.baseUrl).toBe("http://localhost:5000");
+  });
+
+  it("devFallback 语义：legacy COZE_PROJECT_ENV=DEV 同样回退", async () => {
     const reporter = createOpsReporter({
       name: "test-service",
       version: "0.0.0",

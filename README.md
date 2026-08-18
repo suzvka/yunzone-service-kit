@@ -37,7 +37,7 @@ const status = await registry.getStatus(); // { registeredCount, availableCount,
 
 | 分面 | 变量 | 说明 |
 |------|------|------|
-| `deploymentFacet` | `COZE_PROJECT_ENV`、`COZE_PROJECT_DOMAIN_DEFAULT`、`HOSTNAME`、`DEPLOY_RUN_PORT`、`PORT`、`COZE_WORKSPACE_PATH` | 部署环境（平台注入） |
+| `deploymentFacet` | `DEPLOY_ENV`、`PROJECT_DOMAIN_DEFAULT`、`PUBLIC_BASE_URL`、`DEPLOY_PROVIDER`、`HOSTNAME`、`PORT`、`WORKSPACE_PATH` | 部署面（中立键，TICKET-001） |
 | `authCenterFacet` | `AUTH_CENTER_URL`、`AUTH_CENTER_API_KEY`、`AUTH_CENTER_PRODUCT_ID` | 鉴权中心三要素（规范名） |
 | `userCenterFacet` | `USER_CENTER_URL`、`NEXT_PUBLIC_USER_CENTER_URL`、`USER_CENTER_API_KEY`（预留） | 用户中心地址与凭证 |
 | `adminFacet` | `ADMIN_PASSWORD`、`ADMIN_PATH`（默认 `/admin`） | 管理后台；**未设置密码 = 禁用（503）** |
@@ -64,13 +64,11 @@ const authCenterEnvSchema = requiredFacet(authCenterFacet, [
 const env = loadEnv(authCenterEnvSchema);
 ```
 
-**legacy 别名**：`loadEnv(schema, { aliases })` 支持旧变量名过渡（规范 key 未设置时回退），诊断快照只列规范名、不回显值：
+**aliases 选项**：`loadEnv(schema, { aliases })` 支持规范 key 未设置时回退别名（通用机制；诊断快照只列规范名、不回显值）。平台注入适配（TICKET-001）用预构建的 `deploymentAliases` 常量——**永久机制**（平台注入变量名不可改名，适配层在读取时回退，禁止服务代码裸读）：
 
 ```ts
-// AUTH_SERVER_* 将在 v0.3 移除
-loadEnv(authCenterFacet, {
-  aliases: { AUTH_CENTER_URL: ["AUTH_SERVER_URL"] },
-});
+// COZE_PROJECT_ENV 等平台注入旧名经适配层回退到中立键（永久，禁止裸读）
+loadEnv(deploymentFacet, { aliases: deploymentAliases });
 ```
 
 #### 本地 .env 文件加载
@@ -96,8 +94,21 @@ const env = loadEnv(envSchema, { dotenv: true });
 | `defineEnv` / `loadEnv` / `EnvConfigError` / `envSnapshot` | zod 环境变量契约声明与懒解析；失败抛出带诊断快照的错误（**只显示 set/unset，不回显变量值**） |
 | `parseDotEnv` / `loadDotEnv` / `EnvFileError` | 本地 `.env` 文件解析与加载（默认不覆盖平台注入变量）；`loadEnv` 可传 `{ dotenv: true }` 一键组合 |
 | `resolveDatabaseUrl` | 数据库连接 URL 解析：`DATABASE_PROVIDER` 显式选择 `postgres`（`DATABASE_URL`）/ `coze`（Coze 平台 PG 变量组），不自动嗅探 |
-| `resolveBaseUrl` | 服务对外 baseUrl 解析链：`BETTER_AUTH_URL` →（DEV 回退）→ `COZE_PROJECT_DOMAIN_DEFAULT` → fallback |
-| `resolveListenAddress` | 监听地址：`HOSTNAME`（默认 `0.0.0.0`）+ `DEPLOY_RUN_PORT`/`PORT`（默认 `5000`） |
+| `resolveBaseUrl` | 服务对外 baseUrl 解析链：`PUBLIC_BASE_URL` → `BETTER_AUTH_URL`（历史遗留兼容键）→（DEV 回退）→ `PROJECT_DOMAIN_DEFAULT` → fallback |
+| `resolveListenAddress` | 监听地址：`HOSTNAME`（默认 `0.0.0.0`）+ `PORT`（默认 `5000`；平台旧名 `DEPLOY_RUN_PORT` 经适配层回退） |
+| `normalizeDeployEnv` / `deploymentAliases` | 部署适配层（TICKET-001）：按 `DEPLOY_PROVIDER` 分派，把平台注入旧名**读取时**回退映射到中立键（不写 `process.env`） |
+
+#### 配置键命名规范（TICKET-001）
+
+环境变量命名遵循**三层命名空间模型**，新增配置键需经维护组评审：
+
+1. **通用契约命名空间**（service-kit 声明的键）：一律中立命名，**禁止以任何平台名（coze / vercel / render / aws 等）作为键名的一部分**；平台差异通过键值分派表达（`DEPLOY_PROVIDER` / `DATABASE_PROVIDER`）。
+2. **平台注入命名空间**（`COZE_*`、`PG*` 等）：平台私有。项目**不写入**（`loadDotEnv` 默认平台注入优先，私有值会被静默覆盖）、**不提升进通用契约**（语义污染）。
+3. **项目私有命名空间**（服务自有 schema 扩展）：**自由命名**，但不得占用平台注入命名空间。
+
+**裸读禁令**：禁止直接 `process.env.COZE_*` 裸读平台注入变量，必须经中立键（通用契约 + `deploymentAliases` / `normalizeDeployEnv`）或自有 schema 显式声明（私有层）接入。
+
+平台注入变量名本身不改名，由适配层在读取时映射：解析器内部调用 `normalizeDeployEnv`；`loadEnv` 路径传 `deploymentAliases` 常量。
 
 ### `/ops` — 运维数据接口（纯逻辑层）
 
@@ -110,7 +121,7 @@ import { createOpsReporter } from "yunzone-service-kit/ops";
 
 const reporter = createOpsReporter({ name: "user-center", version: "1.2.3" });
 reporter.addRegistry("captcha", captchaRegistry);
-reporter.setEnvKeys(["AUTH_CENTER_URL", "COZE_SUPABASE_URL"]);
+reporter.setEnvKeys(["AUTH_CENTER_URL", "DEPLOY_ENV"]);
 
 export async function GET() {
   return Response.json(await reporter.report());

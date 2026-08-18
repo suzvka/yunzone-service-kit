@@ -23,6 +23,12 @@ export {
   type ResolveListenAddressOptions,
 } from "./base-url";
 export {
+  deploymentAliases,
+  normalizeDeployEnv,
+  type DeployProviderKind,
+  type NormalizeDeployEnvOptions,
+} from "./deploy";
+export {
   deploymentFacet,
   authCenterFacet,
   userCenterFacet,

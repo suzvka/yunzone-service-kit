@@ -21,7 +21,7 @@ export interface OpsServiceInfo {
 
 /** 部署信息 */
 export interface OpsDeploymentInfo {
-  /** COZE_PROJECT_ENV（PROD/DEV/undefined） */
+  /** DEPLOY_ENV（PROD/DEV/undefined；平台注入旧名经适配层映射） */
   env: string | undefined;
   /** 对外 baseUrl（复用 resolveBaseUrl 解析链） */
   baseUrl: string;

@@ -7,7 +7,7 @@
  *
  * const reporter = createOpsReporter({ name: "user-center", version: "1.2.3" });
  * reporter.addRegistry("captcha", captchaRegistry);
- * reporter.setEnvKeys(["AUTH_CENTER_URL", "COZE_SUPABASE_URL"]);
+ * reporter.setEnvKeys(["AUTH_CENTER_URL", "DEPLOY_ENV"]);
  *
  * // 服务自建端点（如 /ops）：
  * export async function GET() {
@@ -18,7 +18,12 @@
 
 import type { KitProvider } from "../registry";
 import { ProviderRegistry } from "../registry";
-import { envSnapshot, resolveBaseUrl, resolveListenAddress } from "../config";
+import {
+  envSnapshot,
+  normalizeDeployEnv,
+  resolveBaseUrl,
+  resolveListenAddress,
+} from "../config";
 import type { OpsReport } from "./types";
 
 /** createOpsReporter 参数 */
@@ -56,7 +61,8 @@ export function createOpsReporter(options: OpsReporterOptions): OpsReporter {
     },
 
     async report() {
-      const env = options.env ?? process.env;
+      // 平台注入变量经适配层映射到中立键（读取时映射，不写 process.env）
+      const env = normalizeDeployEnv(options.env ?? process.env);
 
       const registriesReport: OpsReport["registries"] = {};
       for (const [id, registry] of registries) {
@@ -73,7 +79,7 @@ export function createOpsReporter(options: OpsReporterOptions): OpsReporter {
           uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
         },
         deployment: {
-          env: env.COZE_PROJECT_ENV,
+          env: env.DEPLOY_ENV,
           baseUrl: resolveBaseUrl({ env }),
           host,
           port,
