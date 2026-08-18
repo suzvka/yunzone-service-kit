@@ -17,8 +17,22 @@ describe("deploymentAliases", () => {
 });
 
 describe("normalizeDeployEnv", () => {
-  it("默认 coze：中立键未设置时回退平台注入旧名", () => {
+  it("默认 self：中立键直读，不回退平台注入旧名", () => {
     const env = normalizeDeployEnv({
+      COZE_PROJECT_ENV: "PROD",
+      COZE_PROJECT_DOMAIN_DEFAULT: "https://platform.example.com",
+      COZE_WORKSPACE_PATH: "/workspace/app",
+      DEPLOY_RUN_PORT: "8080",
+    });
+    expect(env.DEPLOY_ENV).toBeUndefined();
+    expect(env.PROJECT_DOMAIN_DEFAULT).toBeUndefined();
+    expect(env.WORKSPACE_PATH).toBeUndefined();
+    expect(env.PORT).toBeUndefined();
+  });
+
+  it("显式 DEPLOY_PROVIDER=coze 时回退平台注入旧名", () => {
+    const env = normalizeDeployEnv({
+      DEPLOY_PROVIDER: "coze",
       COZE_PROJECT_ENV: "PROD",
       COZE_PROJECT_DOMAIN_DEFAULT: "https://platform.example.com",
       COZE_WORKSPACE_PATH: "/workspace/app",

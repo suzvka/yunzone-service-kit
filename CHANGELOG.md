@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 — 2026-08-19
+
+配置契约合规化收口（BREAKING）：`DEPLOY_PROVIDER` 缺省行为由 `coze` 改为 `self`（通用模式），删除 `userCenterFacet` 的 `NEXT_PUBLIC_USER_CENTER_URL` 键。
+
+- **`DEPLOY_PROVIDER` 缺省改为 `self`（通用模式）**：未设置时中立键直读、不启用平台注入回退；Coze 部署必须显式设置 `DEPLOY_PROVIDER=coze` 才能启用 `COZE_*` / `DEPLOY_RUN_PORT` 回退（原先缺省 coze 实质默认绑定单平台，与 TICKET-001「平台名作为值（分派键）」的合规基线一致化；当前仅一家平台支持，正是切换成本最小的时机）。缺省警告文案同步更新
+- **`userCenterFacet` 删键**：移除 `NEXT_PUBLIC_USER_CENTER_URL`（全集群无内联消费者，浏览器侧统一由服务端运行时接口下发），保留 `USER_CENTER_URL` 与预留 `USER_CENTER_API_KEY`
+- 配套：`tests/deploy.test.ts` / `tests/config.test.ts` 同步（默认 self 直读断言 + 显式 coze 回退覆盖），README、`.env.example` 措辞收口
+- **消费端影响**：WanyanAI 的 `resolveListenAddress` / `resolveBaseUrl` 不再隐式回退平台注入旧名——生产部署（Coze）需显式 `DEPLOY_PROVIDER=coze`；`yunzone_redirect_gateway`（loadEnv + deploymentAliases 静态回退）与 `yunzone_user_center`（自有 ALIAS_MAP）无运行时影响
+
 ## 0.5.0 — 2026-08-19
 
 0.5 排期兑现：服务代码对 legacy `COZE_*` / `DEPLOY_RUN_PORT` 的**裸读清零** + 适配层**正名收口**。集群暂无外部用户，「移除」修订为「永久适配」：平台注入变量名不可改名，`deploymentAliases` / `normalizeDeployEnv` 为永久机制，不再承诺移除版本。

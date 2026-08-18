@@ -39,7 +39,7 @@ const status = await registry.getStatus(); // { registeredCount, availableCount,
 |------|------|------|
 | `deploymentFacet` | `DEPLOY_ENV`、`PROJECT_DOMAIN_DEFAULT`、`PUBLIC_BASE_URL`、`DEPLOY_PROVIDER`、`HOSTNAME`、`PORT`、`WORKSPACE_PATH` | 部署面（中立键，TICKET-001） |
 | `authCenterFacet` | `AUTH_CENTER_URL`、`AUTH_CENTER_API_KEY`、`AUTH_CENTER_PRODUCT_ID` | 鉴权中心三要素（规范名） |
-| `userCenterFacet` | `USER_CENTER_URL`、`NEXT_PUBLIC_USER_CENTER_URL`、`USER_CENTER_API_KEY`（预留） | 用户中心地址与凭证 |
+| `userCenterFacet` | `USER_CENTER_URL`、`USER_CENTER_API_KEY`（预留） | 用户中心服务端地址与凭证 |
 | `adminFacet` | `ADMIN_PASSWORD`、`ADMIN_PATH`（默认 `/admin`） | 管理后台；**未设置密码 = 禁用（503）** |
 
 ```ts
@@ -96,7 +96,7 @@ const env = loadEnv(envSchema, { dotenv: true });
 | `resolveDatabaseUrl` | 数据库连接 URL 解析：`DATABASE_PROVIDER` 显式选择 `postgres`（`DATABASE_URL`）/ `coze`（Coze 平台 PG 变量组），不自动嗅探 |
 | `resolveBaseUrl` | 服务对外 baseUrl 解析链：`PUBLIC_BASE_URL` → `BETTER_AUTH_URL`（历史遗留兼容键）→（DEV 回退）→ `PROJECT_DOMAIN_DEFAULT` → fallback |
 | `resolveListenAddress` | 监听地址：`HOSTNAME`（默认 `0.0.0.0`）+ `PORT`（默认 `5000`；平台旧名 `DEPLOY_RUN_PORT` 经适配层回退） |
-| `normalizeDeployEnv` / `deploymentAliases` | 部署适配层（TICKET-001）：按 `DEPLOY_PROVIDER` 分派，把平台注入旧名**读取时**回退映射到中立键（不写 `process.env`） |
+| `normalizeDeployEnv` / `deploymentAliases` | 部署适配层（TICKET-001）：按 `DEPLOY_PROVIDER` 分派（缺省 `self` 通用模式，中立键直读；Coze 部署需显式设置 `DEPLOY_PROVIDER=coze`），把平台注入旧名**读取时**回退映射到中立键（不写 `process.env`） |
 
 #### 配置键命名规范（TICKET-001）
 

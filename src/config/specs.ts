@@ -42,10 +42,9 @@ export const authCenterFacet = z.object({
   AUTH_CENTER_PRODUCT_ID: z.string().optional(),
 });
 
-/** ── 用户中心面：服务端 URL 与客户端注入（NEXT_PUBLIC_*）分开声明 ── */
+/** ── 用户中心面：仅服务端 URL；浏览器侧由服务端经运行时接口下发，不提供 NEXT_PUBLIC_ 内联通道 ── */
 export const userCenterFacet = z.object({
   USER_CENTER_URL: z.string().optional(),
-  NEXT_PUBLIC_USER_CENTER_URL: z.string().optional(),
   /** 预留：用户中心服务端凭证（当前集群暂无消费者） */
   USER_CENTER_API_KEY: z.string().optional(),
 });

@@ -61,11 +61,12 @@ describe("createOpsReporter", () => {
     expect(report.registries).toEqual({});
   });
 
-  it("legacy 平台注入旧名经适配层映射（COZE_* / DEPLOY_RUN_PORT）", async () => {
+  it("显式 coze：平台注入旧名经适配层映射（COZE_* / DEPLOY_RUN_PORT）", async () => {
     const reporter = createOpsReporter({
       name: "test-service",
       version: "1.2.3",
       env: {
+        DEPLOY_PROVIDER: "coze",
         COZE_PROJECT_ENV: "PROD",
         DEPLOY_RUN_PORT: "8080",
       },
@@ -91,11 +92,12 @@ describe("createOpsReporter", () => {
     expect(report.deployment.baseUrl).toBe("http://localhost:5000");
   });
 
-  it("devFallback 语义：legacy COZE_PROJECT_ENV=DEV 同样回退", async () => {
+  it("devFallback 语义：显式 coze 时 legacy COZE_PROJECT_ENV=DEV 同样回退", async () => {
     const reporter = createOpsReporter({
       name: "test-service",
       version: "0.0.0",
       env: {
+        DEPLOY_PROVIDER: "coze",
         COZE_PROJECT_ENV: "DEV",
         COZE_PROJECT_DOMAIN_DEFAULT: "https://platform.example.com",
       },

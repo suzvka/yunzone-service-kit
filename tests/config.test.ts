@@ -154,6 +154,7 @@ describe("resolveBaseUrl", () => {
     expect(
       resolveBaseUrl({
         env: {
+          DEPLOY_PROVIDER: "coze",
           BETTER_AUTH_URL: "https://auth.example.com",
           COZE_PROJECT_DOMAIN_DEFAULT: "https://platform.example.com",
         },
@@ -176,9 +177,18 @@ describe("resolveBaseUrl", () => {
     expect(
       resolveBaseUrl({
         env: {
+          DEPLOY_PROVIDER: "coze",
           COZE_PROJECT_ENV: "DEV",
           COZE_PROJECT_DOMAIN_DEFAULT: "https://platform.example.com",
         },
+      })
+    ).toBe("http://localhost:5000");
+  });
+
+  it("默认 self：legacy 旧名不回退（无 DEPLOY_PROVIDER 时按中立键直读）", () => {
+    expect(
+      resolveBaseUrl({
+        env: { COZE_PROJECT_ENV: "DEV", COZE_PROJECT_DOMAIN_DEFAULT: "https://platform.example.com" },
       })
     ).toBe("http://localhost:5000");
   });
@@ -194,7 +204,10 @@ describe("resolveBaseUrl", () => {
   it("legacy 旧名回退：生产环境使用 COZE_PROJECT_DOMAIN_DEFAULT", () => {
     expect(
       resolveBaseUrl({
-        env: { COZE_PROJECT_DOMAIN_DEFAULT: "https://platform.example.com" },
+        env: {
+          DEPLOY_PROVIDER: "coze",
+          COZE_PROJECT_DOMAIN_DEFAULT: "https://platform.example.com",
+        },
       })
     ).toBe("https://platform.example.com");
   });
@@ -227,9 +240,16 @@ describe("resolveListenAddress", () => {
     expect(addr).toEqual({ host: "0.0.0.0", port: 8080 });
   });
 
-  it("PORT 未设置时回退平台旧名 DEPLOY_RUN_PORT", () => {
-    const addr = resolveListenAddress({ env: { DEPLOY_RUN_PORT: "9090" } });
+  it("PORT 未设置时回退平台旧名 DEPLOY_RUN_PORT（DEPLOY_PROVIDER=coze）", () => {
+    const addr = resolveListenAddress({
+      env: { DEPLOY_PROVIDER: "coze", DEPLOY_RUN_PORT: "9090" },
+    });
     expect(addr).toEqual({ host: "0.0.0.0", port: 9090 });
+  });
+
+  it("默认 self：DEPLOY_RUN_PORT 不回退，端口用默认 5000", () => {
+    const addr = resolveListenAddress({ env: { DEPLOY_RUN_PORT: "9090" } });
+    expect(addr).toEqual({ host: "0.0.0.0", port: 5000 });
   });
 
   it("HOSTNAME 与默认端口 5000", () => {
