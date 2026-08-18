@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 — 2026-08-18
+## 0.5.0 — 2026-08-19
 
 0.5 排期兑现：服务代码对 legacy `COZE_*` / `DEPLOY_RUN_PORT` 的**裸读清零** + 适配层**正名收口**。集群暂无外部用户，「移除」修订为「永久适配」：平台注入变量名不可改名，`deploymentAliases` / `normalizeDeployEnv` 为永久机制，不再承诺移除版本。
 
