@@ -8,6 +8,7 @@
  */
 
 import { z } from "zod";
+import { loadDotEnv, type LoadDotEnvOptions } from "./dotenv";
 
 /** 环境变量校验失败（message 附带诊断快照） */
 export class EnvConfigError extends Error {
@@ -45,6 +46,14 @@ export interface LoadEnvOptions {
    * ```
    */
   aliases?: Record<string, string[]>;
+  /**
+   * 先从本地 .env 文件加载并合并进 process.env（见 loadDotEnv），
+   * 再执行 schema 校验。部署时只需拷贝一份 .env 到服务目录。
+   *
+   * - `true`：使用默认路径 `<cwd>/.env`
+   * - `LoadDotEnvOptions`：自定义路径 / override / required
+   */
+  dotenv?: boolean | LoadDotEnvOptions;
 }
 
 /**
@@ -73,6 +82,7 @@ function schemaKeys(schema: z.ZodType): string[] {
 /**
  * 用 schema 解析 process.env。
  *
+ * - `dotenv`：先从本地 .env 文件加载并合并（见 LoadEnvOptions）
  * - `aliases`：规范 key 未设置时回退 legacy 别名（见 LoadEnvOptions）
  * - 失败时抛出 EnvConfigError，message 包含：
  *   1. 各校验问题的路径与描述
@@ -82,6 +92,10 @@ export function loadEnv<S extends z.ZodType>(
   schema: S,
   options?: LoadEnvOptions
 ): z.output<S> {
+  if (options?.dotenv) {
+    loadDotEnv(typeof options.dotenv === "boolean" ? undefined : options.dotenv);
+  }
+
   const env = options?.aliases
     ? applyAliases(process.env, options.aliases)
     : process.env;

@@ -73,11 +73,28 @@ loadEnv(authCenterFacet, {
 });
 ```
 
+#### 本地 .env 文件加载
+
+部署时只需拷贝一份 `.env` 到服务目录，启动时一次灌入，无需运维逐行设置环境变量：
+
+```ts
+// 方式一：独立加载（文件不存在默认静默跳过，开发环境无 .env 可启动）
+loadDotEnv();
+
+// 方式二：loadEnv 一键组合（先加载 .env 再校验）
+const env = loadEnv(envSchema, { dotenv: true });
+```
+
+**合并语义**：默认**不覆盖** process.env 已有变量（平台注入优先），`override: true` 显式覆盖；`required: true` 时文件缺失报错。
+
+**语法子集**：`KEY=VALUE`、单/双引号值（双引号支持 `\n` `\r` `\t` 转义）、`#` 整行注释、空行、`export` 前缀；**不支持**行尾内联注释与多行值（含 `#` 的值按字面量保留）。解析失败抛 `EnvFileError`，只报行号、**不回显变量值**。
+
 #### 其他解析工具
 
 | 导出 | 说明 |
 |---|---|
 | `defineEnv` / `loadEnv` / `EnvConfigError` / `envSnapshot` | zod 环境变量契约声明与懒解析；失败抛出带诊断快照的错误（**只显示 set/unset，不回显变量值**） |
+| `parseDotEnv` / `loadDotEnv` / `EnvFileError` | 本地 `.env` 文件解析与加载（默认不覆盖平台注入变量）；`loadEnv` 可传 `{ dotenv: true }` 一键组合 |
 | `resolveDatabaseUrl` | 数据库连接 URL 解析：`DATABASE_PROVIDER` 显式选择 `postgres`（`DATABASE_URL`）/ `coze`（Coze 平台 PG 变量组），不自动嗅探 |
 | `resolveBaseUrl` | 服务对外 baseUrl 解析链：`BETTER_AUTH_URL` →（DEV 回退）→ `COZE_PROJECT_DOMAIN_DEFAULT` → fallback |
 | `resolveListenAddress` | 监听地址：`HOSTNAME`（默认 `0.0.0.0`）+ `DEPLOY_RUN_PORT`/`PORT`（默认 `5000`） |

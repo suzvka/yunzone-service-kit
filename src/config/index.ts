@@ -5,6 +5,13 @@
 export { EnvConfigError, defineEnv, loadEnv, envSnapshot } from "./env";
 export type { LoadEnvOptions } from "./env";
 export {
+  EnvFileError,
+  parseDotEnv,
+  loadDotEnv,
+  type ParseDotEnvOptions,
+  type LoadDotEnvOptions,
+} from "./dotenv";
+export {
   resolveDatabaseUrl,
   type DatabaseProviderKind,
   type ResolveDatabaseUrlOptions,
