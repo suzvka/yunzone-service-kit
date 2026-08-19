@@ -1,7 +1,7 @@
 {
   "name": "yunzone-service-kit",
-  "version": "0.7.0",
-  "description": "云洲服务集群通用基础设施：插件式注册中心基座（/registry）、运行时配置层（/config）与运维数据接口（/ops）",
+  "version": "0.8.0",
+  "description": "云洲服务集群通用基础设施：插件式注册中心基座（/registry）、运行时配置层（/config）、互斥后端抽象（/db）、共享原语（/core）与运维数据接口（/ops）",
   "license": "MIT",
   "private": false,
   "type": "module",
@@ -33,6 +33,16 @@
       "types": "./dist/ops/next.d.ts",
       "import": "./dist/ops/next.js",
       "require": "./dist/ops/next.cjs"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "require": "./dist/core/index.cjs"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "import": "./dist/db/index.js",
+      "require": "./dist/db/index.cjs"
     }
   },
   "files": [
@@ -53,6 +63,9 @@
     "registry",
     "config",
     "provider",
+    "db",
+    "adapter",
+    "storage",
     "microservices"
   ],
   "peerDependencies": {
