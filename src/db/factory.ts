@@ -1,79 +1,34 @@
 /**
- * 存储工厂
+ * 数据库渠道工厂
  *
- * 契约在 kit（yunzone-service-kit/db）、实现留在消费侧——kit 保持零新增运行时依赖：
- * - memory：kit 内置（测试/本地开发）
- * - postgres / file / txt：适配器由消费迁移阶段在各项目内实现
- *
- * 组合根职责（统一约定）：校验 backend → 实例化 → init → 注册 disconnect 到进程退出钩子。
+ * 契约在 kit（yunzone-service-kit/db）、渠道实现延后提供：
+ * - postgres / coze 适配器当前均不可实例化，统一抛 StorageConfigError（fail-fast）
+ * - 组合根职责（统一约定）：校验 channel → 实例化 → init → 注册 disconnect 到进程退出钩子
  */
 
 import { StorageConfigError } from "./errors";
-import {
-  MemoryKeyValueStore,
-  TransactionalMemoryDbAdapter,
-} from "./memory";
-import type {
-  DbAdapter,
-  KeyValueStore,
-  StorageBackend,
-  StorageConfig,
-  TransactionalDbAdapter,
-} from "./types";
+import type { DatabaseChannel, SqlDb, SqlDbConfig } from "./types";
 
-/** 无法在当前包内实例化的 backend 统一报错 */
-function unavailableBackend(backend: StorageBackend): StorageConfigError {
+/** 当前无法在包内实例化的渠道统一报错 */
+function unavailableChannel(channel: DatabaseChannel): StorageConfigError {
   return new StorageConfigError(
-    `[db/factory] backend="${backend}" 适配器由消费侧提供，本阶段仅 "memory" 可实例化。` +
-      `契约见 yunzone-service-kit/db。`
+    `[db/factory] channel="${channel}" 渠道适配器延后提供，契约见 yunzone-service-kit/db。` +
+      `postgres 模式实现需额外获取连接凭证（DATABASE_URL）；coze 模式按平台注入行为运行。`
   );
 }
 
 /**
- * 运行时守卫：事务收窄（调用方在请求事务前先验证）
+ * 创建 SQL 执行器（按 channel 分派）
  *
- * 非事务实现上的事务请求应抛 TransactionUnavailableError（fail-fast），
- * 取代静默顺序写入回退。
+ * @throws StorageConfigError 渠道当前不可实例化时抛出
  */
-export function isTransactional(adapter: DbAdapter): adapter is TransactionalDbAdapter {
-  return typeof (adapter as TransactionalDbAdapter).transaction === "function";
-}
-
-/**
- * 创建通用数据平面适配器（按 backend 分派）
- *
- * @throws StorageConfigError backend 当前不可实例化时抛出
- */
-export function createDbAdapter(config: StorageConfig): TransactionalDbAdapter | DbAdapter {
-  switch (config.backend) {
-    case "memory":
-      return new TransactionalMemoryDbAdapter();
+export function createSqlDb(config: SqlDbConfig): SqlDb {
+  switch (config.channel) {
     case "postgres":
-    case "file":
-    case "txt":
-      throw unavailableBackend(config.backend);
+    case "coze":
+      throw unavailableChannel(config.channel);
     default: {
-      const exhaustive: never = config.backend;
-      return String(exhaustive) as never;
-    }
-  }
-}
-
-/**
- * 创建键值原语（按 backend 分派）
- *
- * @throws StorageConfigError backend 当前不可实例化时抛出
- */
-export function createKeyValueStore(config: { backend: StorageBackend }): KeyValueStore {
-  switch (config.backend) {
-    case "memory":
-      return new MemoryKeyValueStore();
-    case "postgres":
-    case "file":
-    case "txt":
-      throw unavailableBackend(config.backend);
-    default: {
-      const exhaustive: never = config.backend;
+      const exhaustive: never = config.channel;
       return String(exhaustive) as never;
     }
   }
