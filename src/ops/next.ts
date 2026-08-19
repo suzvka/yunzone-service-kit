@@ -1,0 +1,80 @@
+/**
+ * 管理后台路由适配层（Next.js，v1.0 协议）
+ *
+ * 与 ops/admin.ts 的纯逻辑分离：本模块依赖 next/server 运行时响应，仅提供路由级
+ * 守卫 `requireAdminAuth`，包装器范式：未登录 401，禁用态 503（协议 2.7/2.8）。
+ * 单独入口（yunzone-service-kit/ops/next），不污染纯逻辑层。
+ *
+ * 类型解耦说明：Next.js 的 NextRequest/NextResponse 携带内部私有标记
+ * （[INTERNALS] 等），不同 node_modules 物理副本间类型互不兼容。因此本模块
+ * 不引入 NextRequest 作为参数类型：守卫内部按鸭子类型读取 `request.cookies()`，
+ * 外层用宽松泛型 `THandler` 原样透传服务侧 handler，避免任何跨副本类型比较。
+ */
+
+import { NextResponse } from "next/server";
+import {
+  ADMIN_SESSION_COOKIE,
+  resolveAdminConfig,
+  validateSignedAdminSession,
+} from "./admin";
+
+/** 动态段参数（Next.js App Router） */
+export type AdminRouteParams = Record<string, string | string[]>;
+
+/** 鸭子类型：Next.js RequestCookies 最小面（守卫仅依赖此方法） */
+export interface AdminRequestCookiesLike {
+  get(name: string): { name: string; value: string } | undefined;
+}
+
+/** 鸭子类型：Next.js NextRequest 最小面 */
+export interface AdminRouteRequestLike {
+  cookies(): AdminRequestCookiesLike;
+}
+
+/** 管理后台路由处理函数（守卫可承载的服务侧 handler 形态） */
+export type AdminRouteHandler = (
+  request: AdminRouteRequestLike,
+  context: { params: Promise<AdminRouteParams> }
+) => Promise<Response>;
+
+/** 宽松 handler 形态（透传原签名的兜底约束，兼容任意服务侧签名） */
+type LooseAdminRouteHandler = (...args: any[]) => any;
+
+/**
+ * 包装一个管理后台路由处理函数。
+ *
+ * - `ADMIN_PASSWORD` 未设置（禁用态）→ `503 {code:"ADMIN_DISABLED"}`
+ * - 未登录 / 会话无效 / 已过期 → `401 {code:"UNAUTHENTICATED"}`
+ * - 通过 → 原样调用 handler
+ *
+ * 返回类型与原 handler 相同（服务侧保留自身 Next.js 副本的精确签名）。
+ */
+export function requireAdminAuth<THandler extends LooseAdminRouteHandler>(
+  handler: THandler
+): THandler {
+  const wrapped: LooseAdminRouteHandler = async (request, context) => {
+    const admin = resolveAdminConfig();
+    if (!admin.enabled || !admin.password) {
+      return NextResponse.json(
+        { code: "ADMIN_DISABLED", message: "管理后台已禁用" },
+        { status: 503 }
+      );
+    }
+
+    const session = request.cookies?.()?.get(ADMIN_SESSION_COOKIE)?.value;
+    const username = session
+      ? validateSignedAdminSession(session, admin.password, {
+          maxAgeSeconds: admin.sessionMaxAgeSeconds,
+        })
+      : null;
+    if (username === null) {
+      return NextResponse.json(
+        { code: "UNAUTHENTICATED", message: "未登录，需要管理员权限" },
+        { status: 401 }
+      );
+    }
+
+    return handler(request, context);
+  };
+  return wrapped as unknown as THandler;
+}

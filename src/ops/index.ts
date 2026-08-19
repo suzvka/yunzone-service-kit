@@ -5,10 +5,19 @@
 export * from "./types";
 export { createOpsReporter, type OpsReporter, type OpsReporterOptions } from "./report";
 export {
+  ADMIN_SESSION_COOKIE,
+  ADMIN_SESSION_DEFAULT_MAX_AGE_SECONDS,
   resolveAdminConfig,
   verifyAdminToken,
+  hashAdminPassword,
+  verifyAdminPasswordWithHash,
+  deriveAdminSessionSecret,
+  createSignedAdminSession,
+  validateSignedAdminSession,
   createAdminSession,
   validateAdminSession,
   type AdminConfig,
+  type SignedAdminSessionPayload,
+  type ValidateSignedAdminSessionOptions,
   type ValidateAdminSessionOptions,
 } from "./admin";

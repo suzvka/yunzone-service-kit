@@ -49,11 +49,15 @@ export const userCenterFacet = z.object({
   USER_CENTER_API_KEY: z.string().optional(),
 });
 
-/** ── 管理面：ADMIN_PASSWORD 未设置 = 管理后台禁用（503） ── */
+/** ── 管理面：ADMIN_PASSWORD 未设置 = 管理后台禁用（503），禁止默认密码回退 ── */
 export const adminFacet = z.object({
   ADMIN_PASSWORD: z.string().optional(),
   /** 管理后台路径前缀，默认 "/admin" */
   ADMIN_PATH: z.string().optional(),
+  /** 管理后台用户名（可选）：设置后启用「用户名 + 密码」双凭证认证 */
+  ADMIN_USERNAME: z.string().optional(),
+  /** 会话有效期（秒），默认 86400（24h） */
+  ADMIN_SESSION_MAX_AGE: z.string().optional(),
 });
 
 /** 合并两个 shape（B 覆盖同名 key；运行时重复 key 会抛错，此处仅为类型） */

@@ -6,6 +6,7 @@ export default defineConfig({
     "src/registry/index.ts",
     "src/config/index.ts",
     "src/ops/index.ts",
+    "src/ops/next.ts",
   ],
   format: ["esm", "cjs"],
   dts: true,

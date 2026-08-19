@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0 — 2026-08-19
+
+管理后台认证协议 v1.0（Admin Session Protocol）落地：`/ops` 升级为全集群唯一实现，四个服务（用户中心 / 鉴权中心 / WanyanAI / 重定向网关）删除各自 admin-auth 实现，统一走 kit。
+
+- **`/ops` 新增 HMAC 签名会话（协议 2.3/2.4）**：`createSignedAdminSession` / `validateSignedAdminSession`（`payload.signature` 两段 base64url；secret 由 `sha256hex("admin-session:" + sha256hex(ADMIN_PASSWORD))` 派生，密码轮换即全员失效；校验顺序含签名长度短路，防 `timingSafeEqual` 抛异常）、`deriveAdminSessionSecret`、`hashAdminPassword` / `verifyAdminPasswordWithHash`（登录密码常量时间比对）、常量 `ADMIN_SESSION_COOKIE` / `ADMIN_SESSION_DEFAULT_MAX_AGE_SECONDS`
+- **`resolveAdminConfig` 新增 `sessionMaxAgeSeconds`**：读 `ADMIN_SESSION_MAX_AGE`（秒，默认 86400），非法/非正数值回退默认
+- **`/ops/next`（新入口 `yunzone-service-kit/ops/next`）**：`requireAdminAuth` 路由守卫（禁用态 503 `ADMIN_DISABLED`、未登录 401 `UNAUTHENTICATED`）；采用鸭子类型 + 宽松泛型透传，规避 Next.js 16 内部私有标记导致的跨副本类型不兼容
+- **`/config` adminFacet 新增键**：`ADMIN_USERNAME`（双凭证认证）、`ADMIN_SESSION_MAX_AGE`
+- **旧 base64 明文函数（`createAdminSession` / `validateAdminSession`）标记 `@deprecated`**：内含明文密码、泄露即被伪造，过渡一个版本后移除
+- **peerDependencies 新增 `next`（optional）**：`/ops/next` 依赖 next/server 运行时，纯逻辑层（`/ops` 主入口）保持零框架耦合
+- 消费端迁移：yunzone_user_center / yunzone_auth 删 `src/lib/admin-auth.ts` 改调 kit（含移除默认密码回退与固定密钥 fallback、守卫 `code` 字段对齐、登录接口限流）；WanyanAI verify/guard 改 HMAC 会话并统一 `ADMIN_DISABLED`/`UNAUTHENTICATED` 码；yunzone_redirect_gateway 由 Bearer + sessionStorage 迁移为 HttpOnly cookie 会话协议
+- 配套：`tests/admin.test.ts` 新增 HMAC 会话/MAX_AGE/密码比对测试组（共 107 例全绿）
+
 ## 0.6.0 — 2026-08-19
 
 配置契约合规化收口（BREAKING）：`DEPLOY_PROVIDER` 缺省行为由 `coze` 改为 `self`（通用模式），删除 `userCenterFacet` 的 `NEXT_PUBLIC_USER_CENTER_URL` 键。

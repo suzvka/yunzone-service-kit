@@ -161,7 +161,12 @@ describe("envSnapshot", () => {
 
 describe("facetKeys", () => {
   it("提取 ZodObject 顶层 key", () => {
-    expect(facetKeys(adminFacet).sort()).toEqual(["ADMIN_PASSWORD", "ADMIN_PATH"]);
+    expect(facetKeys(adminFacet).sort()).toEqual([
+          "ADMIN_PASSWORD",
+          "ADMIN_PATH",
+          "ADMIN_SESSION_MAX_AGE",
+          "ADMIN_USERNAME",
+        ]);
   });
 
   it("requiredFacet 包装后仍可提取（superRefine 返回 this）", () => {
