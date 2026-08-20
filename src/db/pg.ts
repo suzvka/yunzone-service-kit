@@ -1,0 +1,112 @@
+/**
+ * PgSqlDb — postgres / coze 渠道适配器（kit 官方实现）
+ *
+ * 实现 SqlDb 契约：
+ * - query / execute 直传参数化 SQL（$1 占位）到 pg 连接池
+ * - withTransaction 真事务（BEGIN / COMMIT / ROLLBACK），事务代理禁止嵌套
+ * - 错误归一化：唯一约束冲突（pg 23505）→ UniqueViolationError
+ *
+ * 渠道差异只体现在连接凭证获取方式（postgres → DATABASE_URL；
+ * coze → 平台注入 PGDATABASE_URL / PG* 变量组），本类不感知渠道差异，
+ * 凭证由调用方经 resolveDatabaseUrl 解析后传入。
+ */
+
+import { Pool } from "pg";
+import type { PoolClient, PoolConfig } from "pg";
+import { UniqueViolationError } from "./errors";
+import type { SqlDb } from "./types";
+
+/** pg 唯一约束冲突错误码 */
+const PG_UNIQUE_VIOLATION = "23505";
+
+/** PgSqlDb 构造选项（透传给 pg Pool） */
+export interface PgSqlDbOptions {
+  /** SSL 配置（如 Coze/云数据库连接）；默认不启用 */
+  ssl?: PoolConfig["ssl"];
+  /** 连接池上限（默认 10） */
+  max?: number;
+  /** 空闲连接回收毫秒（默认 30000） */
+  idleTimeoutMillis?: number;
+}
+
+/** 错误归一化：底层 pg 错误 → kit 错误族 */
+function normalizeError(err: unknown): unknown {
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: string }).code === PG_UNIQUE_VIOLATION
+  ) {
+    return new UniqueViolationError((err as Error).message);
+  }
+  return err;
+}
+
+export class PgSqlDb implements SqlDb {
+  protected pool: Pool | PoolClient;
+
+  constructor(connectionString: string, options?: PgSqlDbOptions) {
+    this.pool = new Pool({
+      connectionString,
+      max: options?.max ?? 10,
+      idleTimeoutMillis: options?.idleTimeoutMillis ?? 30000,
+      ...(options?.ssl ? { ssl: options.ssl } : {}),
+    });
+  }
+
+  async query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
+    try {
+      const { rows } = await this.pool.query(sql, params as never[]);
+      return rows as T[];
+    } catch (err) {
+      throw normalizeError(err);
+    }
+  }
+
+  async execute(sql: string, params?: unknown[]): Promise<number> {
+    try {
+      const { rowCount } = await this.pool.query(sql, params as never[]);
+      return rowCount ?? 0;
+    } catch (err) {
+      throw normalizeError(err);
+    }
+  }
+
+  async withTransaction<T>(fn: (db: SqlDb) => Promise<T>): Promise<T> {
+    const client = await (this.pool as Pool).connect();
+    try {
+      await client.query("BEGIN");
+      const txDb = new PgSqlDbTransaction(client);
+      const result = await fn(txDb);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    // 事务代理持有 PoolClient，不在此释放（由 withTransaction 的 finally 释放）
+    if (this.pool instanceof Pool) {
+      await this.pool.end();
+    }
+  }
+}
+
+/**
+ * 事务代理：将执行器绑定到事务连接（PoolClient）。
+ * 事务内禁止嵌套事务（fail-fast，取代静默回退）。
+ */
+class PgSqlDbTransaction extends PgSqlDb {
+  constructor(client: PoolClient) {
+    // 跳过父类的 Pool 创建，直接注入事务连接
+    super("__tx__");
+    this.pool = client;
+  }
+
+  override async withTransaction<T>(_fn: (db: SqlDb) => Promise<T>): Promise<T> {
+    throw new Error("不支持嵌套事务");
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "yunzone-service-kit",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "云洲服务集群通用基础设施：插件式注册中心基座（/registry）、运行时配置层（/config）、SQL 数据库抽象（/db）、共享原语（/core）与运维数据接口（/ops）",
   "license": "MIT",
   "private": false,
@@ -69,8 +69,8 @@
     "microservices"
   ],
   "peerDependencies": {
-    "zod": "^4",
-    "next": ">=14"
+    "next": ">=14",
+    "zod": "^4"
   },
   "peerDependenciesMeta": {
     "next": {
@@ -79,10 +79,14 @@
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "next": "16.1.1",
     "tsup": "^8.0.0",
     "typescript": "^5",
     "vitest": "^3.0.0",
     "zod": "^4.3.5"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
   }
 }

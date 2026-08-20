@@ -116,15 +116,16 @@ const env = loadEnv(envSchema, { dotenv: true });
 
 - `SqlDb`：SQL 执行器接口——`query(sql, params)` 查询返回行、`execute(sql, params)` 写语句返回影响行数、`withTransaction(fn)` 事务强承诺（回调内全部写入要么整体提交、要么整体回滚）
 - 渠道两模式（`DatabaseChannel`）：`postgres`（通用，实现需额外获取连接凭证 `DATABASE_URL`）/ `coze`（按平台注入行为运行，`PGDATABASE_URL` / `PG*` 变量组）——SQL 语义一致，仅连接凭证获取方式不同
+- `PgSqlDb`：kit 官方渠道适配器（真事务、唯一键冲突归一化为 `UniqueViolationError`、支持 `ssl` / `max` 等连接池选项）
 - `resolveDatabaseChannel`：渠道解析，唯一来源 `DATABASE_PROVIDER`，未设置默认 `postgres`（不自动嗅探）
-- `createSqlDb({ channel })`：渠道工厂（当前适配器延后提供，调用抛 `StorageConfigError`）
+- `createSqlDb({ channel })`：渠道工厂——按 channel 分派凭证获取并返回 `PgSqlDb` 实例；需要自定义连接池选项（如 SSL）时直接 `new PgSqlDb(url, options)`
 - 错误族：`StorageError` 基类、`UniqueViolationError`（唯一键冲突归一化）、`StorageConfigError`（配置错误）
 
 ```ts
 import { createSqlDb, resolveDatabaseChannel } from "yunzone-service-kit/db";
 
 const channel = resolveDatabaseChannel(); // DATABASE_PROVIDER → "postgres" | "coze"
-const db = createSqlDb({ channel });     // 适配器就绪后返回 SqlDb
+const db = createSqlDb({ channel });     // postgres → DATABASE_URL；coze → 平台注入变量组
 
 const rows = await db.query("SELECT id FROM users WHERE name = $1", ["alice"]);
 ```

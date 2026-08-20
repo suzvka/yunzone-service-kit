@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.10.0 — 2026-08-20
+
+SqlDb 渠道适配器落地：`/db` 从"纯契约"变为"契约 + 官方实现"。
+
+- **新增 `PgSqlDb`（kit 官方渠道适配器）**：实现 `SqlDb`（query / execute / withTransaction / disconnect）；真事务 BEGIN/COMMIT/ROLLBACK、事务代理禁止嵌套（fail-fast）；pg 23505 → `UniqueViolationError` 归一化；构造支持 `PgSqlDbOptions`（`ssl` / `max` / `idleTimeoutMillis`，适配 Coze/云数据库 SSL 连接）
+- **`createSqlDb` 真正实例化**：按 channel 分派凭证获取（`postgres` → `DATABASE_URL`；`coze` → 平台注入 `PGDATABASE_URL` / `PG*` 变量组），env 可注入便于测试；凭证缺失抛错（fail-fast，禁止自动嗅探）
+- **kit 新增运行时依赖 `pg`**（@types/pg 为 devDependency）：`/db` 由零依赖变为自带官方适配器
+- **消费侧迁移**：yunzone_auth 删除本地 pg-sql-db.ts 改调 kit（`createSqlDb` + `resolveDatabaseChannel`，db-provider 合并简化）；yunzone_user_center raw.ts 基于 SqlDb（保持 QueryResult 形状，15+ 调用方零改动）；WanyanAI config-store 去 Drizzle 查询改 SqlDb
+- 配套：`tests/db.test.ts` 工厂测试更新（渠道分派返回实例 / 凭证缺失抛错）
+
+## 0.9.0 — 2026-08-20
+
+`/db` 重构为 SQL 字符串抽象（BREAKING）："互斥后端通用 CRUD 原语" → "SQL 字符串直传"。
+
+- **新增 `SqlDb` 契约**：`query(sql, params)` 返回行 / `execute(sql, params)` 返回影响行数 / `withTransaction(fn)` 事务强承诺（单一接口，所有实现必须支持事务）；`DatabaseChannel`（`postgres` | `coze`）取代 `StorageBackend` 4 值；`SqlDbConfig` 显式声明，禁止自动嗅探
+- **删除旧契约**：`DbAdapter` / `TransactionalDbAdapter` / `KeyValueStore` / `Condition` / `OrderBy` / `StorageBackend` 4 值 / `resolveStorageBackend`（旧键兼容退役）/ `RecordNotFoundError` / `TransactionUnavailableError` / memory 适配器
+- **错误族精简**：`StorageError` 基类 + `UniqueViolationError`（唯一键冲突归一化）+ `StorageConfigError`
+- **`resolveDatabaseChannel`**：唯一来源 `DATABASE_PROVIDER`，未设置默认 `postgres`（与 `resolveDatabaseUrl` 一致）
+- **`createSqlDb`**：渠道工厂（当时适配器延后，一律抛 `StorageConfigError`）
+- **kit 新增运行时依赖 `pg`**：/db 由零依赖变为自带官方适配器（0.10.0 落地）
+- 消费侧迁移：yunzone_auth（PgTokenDb / PgCertificateDb 改基于 SqlDb 执行，自建 PgSqlDb 适配器，0.10.0 后切换为 kit 实现）
+- 配套：`tests/db.test.ts` 契约测试重写（桩验证接口形状 / 事务提交回滚 / 错误归一化）；README 新增 `/db` 章节
+
 ## 0.7.0 — 2026-08-19
 
 管理后台认证协议 v1.0（Admin Session Protocol）落地：`/ops` 升级为全集群唯一实现，四个服务（用户中心 / 鉴权中心 / WanyanAI / 重定向网关）删除各自 admin-auth 实现，统一走 kit。

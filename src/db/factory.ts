@@ -1,32 +1,34 @@
 /**
  * 数据库渠道工厂
  *
- * 契约在 kit（yunzone-service-kit/db）、渠道实现延后提供：
- * - postgres / coze 适配器当前均不可实例化，统一抛 StorageConfigError（fail-fast）
+ * 契约与官方适配器均在 kit：
+ * - postgres / coze 渠道统一由 PgSqlDb 适配（渠道差异 = 凭证获取方式）：
+ *   - postgres：凭证取自 DATABASE_URL
+ *   - coze：按平台注入行为运行（PGDATABASE_URL / PG* 变量组）
+ * - env 可注入（默认 process.env），便于测试
  * - 组合根职责（统一约定）：校验 channel → 实例化 → init → 注册 disconnect 到进程退出钩子
  */
 
-import { StorageConfigError } from "./errors";
+import { resolveDatabaseUrl } from "../config";
+import { PgSqlDb } from "./pg";
 import type { DatabaseChannel, SqlDb, SqlDbConfig } from "./types";
 
-/** 当前无法在包内实例化的渠道统一报错 */
-function unavailableChannel(channel: DatabaseChannel): StorageConfigError {
-  return new StorageConfigError(
-    `[db/factory] channel="${channel}" 渠道适配器延后提供，契约见 yunzone-service-kit/db。` +
-      `postgres 模式实现需额外获取连接凭证（DATABASE_URL）；coze 模式按平台注入行为运行。`
-  );
-}
-
 /**
- * 创建 SQL 执行器（按 channel 分派）
+ * 创建 SQL 执行器（按 channel 分派凭证获取方式）
  *
- * @throws StorageConfigError 渠道当前不可实例化时抛出
+ * @throws Error 渠道对应凭证缺失时抛出（含诊断快照，见 config/resolveDatabaseUrl）
  */
-export function createSqlDb(config: SqlDbConfig): SqlDb {
+export function createSqlDb(
+  config: SqlDbConfig,
+  env: Record<string, string | undefined> = process.env
+): SqlDb {
   switch (config.channel) {
     case "postgres":
+      // 通用模式：额外获取连接凭证（DATABASE_URL）
+      return new PgSqlDb(resolveDatabaseUrl({ provider: "postgres", env }));
     case "coze":
-      throw unavailableChannel(config.channel);
+      // coze 模式：按平台注入行为运行（PGDATABASE_URL / PG* 变量组）
+      return new PgSqlDb(resolveDatabaseUrl({ provider: "coze", env }));
     default: {
       const exhaustive: never = config.channel;
       return String(exhaustive) as never;

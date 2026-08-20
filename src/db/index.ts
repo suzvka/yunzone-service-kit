@@ -7,10 +7,13 @@
  * - 事务强承诺：所有实现必须提供 withTransaction，禁止假承诺
  * - 生命周期：init/disconnect 钩子由组合根统一调度
  *
- * 契约在本模块；postgres / coze 渠道适配器延后提供。
+ * 契约与官方适配器（PgSqlDb）均在本模块；需要自定义连接池选项
+ * （如 SSL）时直接实例化 PgSqlDb，否则用 createSqlDb 快捷入口。
  */
 
 export { resolveDatabaseChannel } from "./resolve";
 export { createSqlDb } from "./factory";
+export { PgSqlDb } from "./pg";
+export type { PgSqlDbOptions } from "./pg";
 export { StorageError, UniqueViolationError, StorageConfigError } from "./errors";
 export type { DatabaseChannel, SqlDbConfig, SqlDb } from "./types";

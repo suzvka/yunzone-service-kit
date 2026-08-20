@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  PgSqlDb,
   StorageConfigError,
   StorageError,
   UniqueViolationError,
@@ -164,10 +165,26 @@ describe("错误归一化约定", () => {
 });
 
 describe("工厂", () => {
-  it("createSqlDb 对 postgres / coze 当前抛 StorageConfigError（渠道适配器延后提供）", () => {
-    for (const channel of ["postgres", "coze"] as const) {
-      expect(() => createSqlDb({ channel })).toThrowError(StorageConfigError);
-      expect(() => createSqlDb({ channel })).toThrowError(/渠道适配器延后提供/);
-    }
+  it("createSqlDb 按渠道分派凭证获取并返回 PgSqlDb 实例", () => {
+    const pg = createSqlDb(
+      { channel: "postgres" },
+      { DATABASE_URL: "postgresql://test:test@localhost/test" }
+    );
+    expect(pg).toBeInstanceOf(PgSqlDb);
+
+    const coze = createSqlDb(
+      { channel: "coze" },
+      { PGDATABASE_URL: "postgresql://test:test@localhost/test" }
+    );
+    expect(coze).toBeInstanceOf(PgSqlDb);
+  });
+
+  it("凭证缺失时抛错（fail-fast，禁止自动嗅探）", () => {
+    expect(() => createSqlDb({ channel: "postgres" }, {})).toThrowError(
+      /DATABASE_URL is not set/
+    );
+    expect(() => createSqlDb({ channel: "coze" }, {})).toThrowError(
+      /missing required env vars/
+    );
   });
 });
