@@ -65,9 +65,10 @@ class StubSqlDb implements SqlDb {
 }
 
 describe("resolveDatabaseChannel", () => {
-  it("DATABASE_PROVIDER 直读两渠道", () => {
+  it("DATABASE_PROVIDER 直读三渠道", () => {
     expect(resolveDatabaseChannel({ DATABASE_PROVIDER: "postgres" })).toBe("postgres");
     expect(resolveDatabaseChannel({ DATABASE_PROVIDER: "coze" })).toBe("coze");
+    expect(resolveDatabaseChannel({ DATABASE_PROVIDER: "none" })).toBe("none");
   });
 
   it("未设置时默认 postgres（与 resolveDatabaseUrl 一致，不自动嗅探）", () => {
@@ -80,7 +81,7 @@ describe("resolveDatabaseChannel", () => {
       StorageConfigError
     );
     expect(() => resolveDatabaseChannel({ DATABASE_PROVIDER: "mysql" })).toThrowError(
-      /DATABASE_PROVIDER 非法: "mysql".*支持: postgres, coze/
+      /DATABASE_PROVIDER 非法: "mysql".*支持: postgres, coze, none/
     );
   });
 });
@@ -189,10 +190,17 @@ describe("工厂", () => {
     expect(coze).toBeInstanceOf(PgSqlDb);
   });
 
-  it("凭证缺失时抛错（fail-fast，禁止自动嗅探）", () => {
+  it("none 渠道（显式无库声明）创建执行器直接抛 StorageConfigError（fail-fast，不做降级）", () => {
+    expect(() => createSqlDb({ channel: "none" }, {})).toThrowError(StorageConfigError);
+    expect(() => createSqlDb({ channel: "none" }, {})).toThrowError(/none.*不应创建数据库执行器/);
+  });
+
+  it("凭证缺失时抛 StorageConfigError（fail-fast，禁止自动嗅探）", () => {
+    expect(() => createSqlDb({ channel: "postgres" }, {})).toThrowError(StorageConfigError);
     expect(() => createSqlDb({ channel: "postgres" }, {})).toThrowError(
       /DATABASE_URL is not set/
     );
+    expect(() => createSqlDb({ channel: "coze" }, {})).toThrowError(StorageConfigError);
     expect(() => createSqlDb({ channel: "coze" }, {})).toThrowError(
       /missing required env vars/
     );

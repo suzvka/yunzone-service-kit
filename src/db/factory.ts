@@ -10,6 +10,7 @@
  */
 
 import { resolveDatabaseUrl } from "../config";
+import { StorageConfigError } from "./errors";
 import { PgSqlDb } from "./pg";
 import type { DatabaseChannel, SqlDb, SqlDbConfig } from "./types";
 
@@ -29,6 +30,12 @@ export function createSqlDb(
     case "coze":
       // coze 模式：按平台注入行为运行（PGDATABASE_URL / PG* 变量组）
       return new PgSqlDb(resolveDatabaseUrl({ provider: "coze", env }));
+    case "none":
+      // none = 显式无库声明：任何创建数据库执行器的行为都是配置错误（fail-fast）
+      throw new StorageConfigError(
+        "[db/factory] channel 为 none（显式无库），不应创建数据库执行器。" +
+          "业务应选择非库存储后端（如文件）。"
+      );
     default: {
       const exhaustive: never = config.channel;
       return String(exhaustive) as never;

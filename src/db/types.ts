@@ -3,15 +3,17 @@
  *
  * 集群统一数据库抽象形状（取代旧的"互斥后端"DbAdapter 通用 CRUD 原语）：
  * - SQL 字符串即真理：调用方直接书写参数化 SQL（$1、$2 占位），无字段映射层
- * - 渠道两模式：postgres（通用）/ coze（平台注入），渠道差异 = 连接凭证获取方式
+ * - 渠道三值域：postgres（通用）/ coze（平台注入）/ none（显式无库），渠道差异 = 连接凭证获取方式
+ * - none 即显式无库声明：任何数据库操作（createSqlDb / resolveDatabaseUrl）对其 fail-fast 抛错，
+ *   消费方应据此选择非库存储后端（如文件），不做降级或空实现
  * - 事务强承诺：所有实现必须提供 withTransaction（pg 真事务；测试桩快照回滚模拟）
  * - 生命周期：init/disconnect 钩子由组合根统一调度
  */
 
 import type { LifecycleAware } from "../core";
 
-/** 数据库渠道（值域统一；SQL 语义一致，仅连接凭证获取方式不同） */
-export type DatabaseChannel = "postgres" | "coze";
+/** 数据库渠道（值域统一；SQL 语义一致，仅连接凭证获取方式不同；none = 显式无库声明） */
+export type DatabaseChannel = "postgres" | "coze" | "none";
 
 /** 渠道配置：channel 显式必填，禁止自动嗅探与隐式默认 */
 export interface SqlDbConfig {

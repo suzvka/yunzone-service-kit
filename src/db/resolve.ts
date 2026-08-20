@@ -4,6 +4,8 @@
  * 唯一来源 DATABASE_PROVIDER（与 config/resolveDatabaseUrl 的行为一致）：
  * - postgres（默认，未设置时）：通用 PostgreSQL，凭证取自 DATABASE_URL
  * - coze：Coze 平台数据库集成，按平台注入行为运行（PGDATABASE_URL / PG* 变量组）
+ * - none：显式无库声明（业务不需要数据库）；任何数据库操作（createSqlDb / resolveDatabaseUrl）
+ *   对其 fail-fast 抛 StorageConfigError，消费方应据此选择非库存储后端
  *
  * 渠道不合法 → 抛 StorageConfigError（fail-fast；禁止自动嗅探与隐式默认）。
  */
@@ -15,7 +17,7 @@ import type { DatabaseChannel } from "./types";
 const DATABASE_PROVIDER_KEY = "DATABASE_PROVIDER";
 
 /** channel 合法值域 */
-const CHANNELS: readonly DatabaseChannel[] = ["postgres", "coze"];
+const CHANNELS: readonly DatabaseChannel[] = ["postgres", "coze", "none"];
 
 /**
  * 解析当前环境应使用的数据库渠道

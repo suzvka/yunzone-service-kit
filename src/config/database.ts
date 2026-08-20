@@ -7,6 +7,8 @@
  * - postgres（默认）：从标准环境变量 DATABASE_URL 读取
  * - coze：从 Coze 平台注入的 PostgreSQL 环境变量组构建连接字符串
  *   （PGDATABASE_URL / PGHOST / PGPORT / PGUSER / PGPASSWORD / PGDATABASE）
+ * - none：显式无库声明；本函数不接受该渠道（由 createSqlDb 前置拦截），
+ *   直接传入时按非法 provider 抛 StorageConfigError
  *
  * 示例：
  * ```
@@ -19,6 +21,8 @@
  * PGDATABASE_URL=postgresql://postgres:...@...
  * ```
  */
+
+import { StorageConfigError } from "../db/errors";
 
 /** 数据库连接模式 */
 export type DatabaseProviderKind = "postgres" | "coze";
@@ -36,7 +40,7 @@ export interface ResolveDatabaseUrlOptions {
 /**
  * 解析数据库连接 URL
  *
- * @throws Error DATABASE_URL 缺失（postgres 模式）、必需变量缺失（coze 模式）
+ * @throws StorageConfigError DATABASE_URL 缺失（postgres 模式）、必需变量缺失（coze 模式）
  *              或 provider 不受支持时抛出，message 附带诊断快照
  */
 export function resolveDatabaseUrl(options?: ResolveDatabaseUrlOptions): string {
@@ -47,7 +51,7 @@ export function resolveDatabaseUrl(options?: ResolveDatabaseUrlOptions): string 
     ((env.DATABASE_PROVIDER || "postgres") as DatabaseProviderKind);
 
   if (!SUPPORTED_PROVIDERS.includes(provider)) {
-    throw new Error(
+    throw new StorageConfigError(
       `[database/provider] Unknown provider: "${provider}". ` +
         `Supported: ${SUPPORTED_PROVIDERS.join(", ")}`
     );
@@ -62,7 +66,7 @@ export function resolveDatabaseUrl(options?: ResolveDatabaseUrlOptions): string 
       const pgHost = env.PGHOST ? "***set***" : "(unset)";
       const pgDbUrl = env.PGDATABASE_URL ? "***set***" : "(unset)";
       const dbUrl = env.DATABASE_URL ? "***set***" : "(unset)";
-      throw new Error(
+      throw new StorageConfigError(
         "[database/provider] DATABASE_URL is not set. " +
           "Diagnostic snapshot: " +
           `{ DATABASE_PROVIDER=${providerValue}, DATABASE_URL=${dbUrl}, ` +
@@ -90,7 +94,7 @@ export function resolveDatabaseUrl(options?: ResolveDatabaseUrlOptions): string 
   const database = env.PGDATABASE || "postgres";
 
   if (!host || !user || !password) {
-    throw new Error(
+    throw new StorageConfigError(
       "[database/provider] Coze integration: missing required env vars (PGHOST, PGUSER, PGPASSWORD). " +
         "Ensure DATABASE_PROVIDER=coze is set and the DB env export step " +
         "completed before build."
