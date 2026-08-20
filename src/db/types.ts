@@ -35,6 +35,11 @@ export interface SqlDb extends LifecycleAware {
   /** 写语句（INSERT/UPDATE/DELETE/DDL），返回受影响行数 */
   execute(sql: string, params?: unknown[]): Promise<number>;
 
-  /** 事务强承诺：回调内全部写入要么整体提交、要么整体回滚，禁止假回退 */
+  /**
+   * 事务强承诺：回调内全部写入要么整体提交、要么整体回滚，禁止假回退。
+   *
+   * 契约约束：回调内禁止调用 omni-auth 等外部库的认证/写 API——
+   * 跨抽象事务互相不可见（外部库在池上另开连接），其写入会静默逃逸本事务。
+   */
   withTransaction<T>(fn: (db: SqlDb) => Promise<T>): Promise<T>;
 }

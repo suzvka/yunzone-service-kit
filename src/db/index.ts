@@ -13,7 +13,7 @@
 
 export { resolveDatabaseChannel } from "./resolve";
 export { createSqlDb } from "./factory";
-export { PgSqlDb } from "./pg";
-export type { PgSqlDbOptions } from "./pg";
+export { PgSqlDb, isPoolProvider } from "./pg";
+export type { PgSqlDbOptions, PoolProvider } from "./pg";
 export { StorageError, UniqueViolationError, StorageConfigError } from "./errors";
 export type { DatabaseChannel, SqlDbConfig, SqlDb } from "./types";

@@ -10,8 +10,17 @@ import { KitError } from "../core";
 /** 数据库基础设施错误基类 */
 export class StorageError extends KitError {}
 
-/** 唯一约束冲突（INSERT/UPDATE 触发唯一键，如 pg 23505；由渠道实现归一化抛出） */
-export class UniqueViolationError extends StorageError {}
+/**
+ * 唯一约束冲突（INSERT/UPDATE 触发唯一键，如 pg 23505；由渠道实现归一化抛出）
+ *
+ * code 固定为 UNIQUE_VIOLATION，与 omni-auth SDK 的同一语义错误码对齐——
+ * 跨抽象（认证域/业务域）判断唯一冲突统一用 err.code，避免同名不同类型陷阱。
+ */
+export class UniqueViolationError extends StorageError {
+  constructor(message: string) {
+    super(message, { code: "UNIQUE_VIOLATION" });
+  }
+}
 
 /** 数据库配置错误（渠道缺失/非法/当前无可用实现） */
 export class StorageConfigError extends StorageError {}

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0 — 2026-08-20
+
+`/db` 契约补全：连接池提供能力入契约（消灭消费者类型断言）+ 错误码值域与 omni-auth SDK 对齐。
+
+- **新增 `PoolProvider` 能力接口 + `isPoolProvider` 类型守卫**：`PgSqlDb` 声明 `implements SqlDb, PoolProvider`；`SqlDb` 契约保持纯净（SQL 执行器心智），消费者（yunzone_user_center raw.ts / onmi-auth client.ts）以守卫替代 `(db as PgSqlDb)` 类型断言，事务代理 getPool 抛错（fail-fast）语义不变
+- **`UniqueViolationError` 显式 `code = "UNIQUE_VIOLATION"`**：与 omni-auth SDK 同一语义错误码对齐（SDK 侧同步删除同名类，改用 `OmniAuthError` + code），跨抽象（认证域/业务域）判断唯一冲突统一按 `err.code`，消除同名不同类型陷阱
+- **事务契约声明**：`SqlDb.withTransaction` / `PgSqlDb.withTransaction` 文档显式声明——回调内禁止调用 omni-auth 等外部库的认证/写 API（跨抽象事务互相不可见，其写入会静默逃逸本事务）
+- 配套：`tests/db.test.ts` 新增 isPoolProvider 守卫测试组、错误码断言，工厂测试改用守卫
+
 ## 0.10.0 — 2026-08-20
 
 SqlDb 渠道适配器落地：`/db` 从"纯契约"变为"契约 + 官方实现"。

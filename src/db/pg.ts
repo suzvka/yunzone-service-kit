@@ -29,6 +29,30 @@ export interface PgSqlDbOptions {
   idleTimeoutMillis?: number;
 }
 
+/**
+ * 连接池提供能力（宿主注入场景：如将池传给 omni-auth 等外部库）。
+ *
+ * SqlDb 契约保持纯净（SQL 执行器心智），本能力接口单独声明，
+ * 消费者用 isPoolProvider 类型守卫探测后调用，替代对具体类的类型断言。
+ */
+export interface PoolProvider {
+  getPool(): Pool;
+}
+
+/**
+ * 类型守卫：判定给定对象是否提供连接池能力。
+ *
+ * 注意：事务代理（PgSqlDbTransaction）的 getPool 会抛错 fail-fast
+ * （"事务代理不暴露连接池"），守卫通过不代表调用一定成功。
+ */
+export function isPoolProvider(db: unknown): db is SqlDb & PoolProvider {
+  return (
+    typeof db === "object" &&
+    db !== null &&
+    typeof (db as PoolProvider).getPool === "function"
+  );
+}
+
 /** 错误归一化：底层 pg 错误 → kit 错误族 */
 function normalizeError(err: unknown): unknown {
   if (
@@ -41,7 +65,7 @@ function normalizeError(err: unknown): unknown {
   return err;
 }
 
-export class PgSqlDb implements SqlDb {
+export class PgSqlDb implements SqlDb, PoolProvider {
   protected pool: Pool | PoolClient;
 
   constructor(connectionString: string, options?: PgSqlDbOptions) {
@@ -80,6 +104,12 @@ export class PgSqlDb implements SqlDb {
     }
   }
 
+  /**
+   * 事务强承诺：回调内全部写入要么整体提交、要么整体回滚。
+   *
+   * 契约约束：回调内禁止调用 omni-auth 等外部库的认证/写 API——
+   * 跨抽象事务互相不可见（外部库在池上另开连接），其写入会静默逃逸本事务。
+   */
   async withTransaction<T>(fn: (db: SqlDb) => Promise<T>): Promise<T> {
     const client = await (this.pool as Pool).connect();
     try {

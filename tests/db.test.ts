@@ -9,6 +9,7 @@ import {
   StorageError,
   UniqueViolationError,
   createSqlDb,
+  isPoolProvider,
   resolveDatabaseChannel,
 } from "../src/db";
 import type { SqlDb } from "../src/db";
@@ -162,6 +163,12 @@ describe("错误归一化约定", () => {
     );
     await expect(throwing.query("SELECT 1")).rejects.toBeInstanceOf(StorageError);
   });
+
+  it("UniqueViolationError 携带统一错误码 UNIQUE_VIOLATION（与 omni-auth SDK 对齐）", () => {
+    const err = new UniqueViolationError("dup");
+    expect(err.code).toBe("UNIQUE_VIOLATION");
+    expect(err).toBeInstanceOf(StorageError);
+  });
 });
 
 describe("工厂", () => {
@@ -171,8 +178,9 @@ describe("工厂", () => {
       { DATABASE_URL: "postgresql://test:test@localhost/test" }
     );
     expect(pg).toBeInstanceOf(PgSqlDb);
-    // getPool 暴露底层连接池引用（宿主注入场景，如传给 omni-auth）
-    expect((pg as PgSqlDb).getPool()).toBeDefined();
+    // 能力接口 + 类型守卫：宿主注入场景（如传给 omni-auth）无需类型断言
+    expect(isPoolProvider(pg)).toBe(true);
+    expect(isPoolProvider(pg) && pg.getPool()).toBeDefined();
 
     const coze = createSqlDb(
       { channel: "coze" },
@@ -188,5 +196,22 @@ describe("工厂", () => {
     expect(() => createSqlDb({ channel: "coze" }, {})).toThrowError(
       /missing required env vars/
     );
+  });
+});
+
+describe("isPoolProvider 能力守卫", () => {
+  it("PgSqlDb 实例通过守卫（提供连接池能力）", () => {
+    const pg = new PgSqlDb("postgresql://test:test@localhost/test");
+    expect(isPoolProvider(pg)).toBe(true);
+  });
+
+  it("纯 SqlDb 实现（无 getPool）不通过守卫", () => {
+    expect(isPoolProvider(new StubSqlDb())).toBe(false);
+  });
+
+  it("非对象入参不通过守卫", () => {
+    expect(isPoolProvider(null)).toBe(false);
+    expect(isPoolProvider(undefined)).toBe(false);
+    expect(isPoolProvider("pool")).toBe(false);
   });
 });
