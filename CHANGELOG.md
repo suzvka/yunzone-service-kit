@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.1 — 2026-08-20
+
+`/db` 渠道值域扩展 `none`（显式无库声明）+ 配置错误类型统一。
+
+- **`DatabaseChannel` 新增 `none` 渠道**：`DATABASE_PROVIDER=none` 显式声明"本服务无数据库"；`resolveDatabaseChannel` 将其解析为合法渠道（未设置仍默认 postgres，零迁移）；`createSqlDb` 对 none 直接抛 `StorageConfigError`（fail-fast，不做降级或空实现），消费方应据此选择非库存储后端（如文件）
+- **配置错误类型统一**：`resolveDatabaseUrl` 三处抛错（Unknown provider / DATABASE_URL 缺失 / coze 变量缺失）由普通 `Error` 统一为 `StorageConfigError`，半配置（有渠道无凭证）可被消费方按类捕获，message 诊断快照不变
+- 消费侧适配：yunzone_redirect_gateway `detectStorageMode` 改为白名单判定（显式 postgres/coze → db；none/未设置/空 → file），避免显式 none 误入 db 模式导致首次请求瘫痪
+- 配套：`tests/db.test.ts` 新增 none 渠道解析/异常路径用例、凭证缺失类型断言
+
 ## 0.11.0 — 2026-08-20
 
 `/db` 契约补全：连接池提供能力入契约（消灭消费者类型断言）+ 错误码值域与 omni-auth SDK 对齐。
