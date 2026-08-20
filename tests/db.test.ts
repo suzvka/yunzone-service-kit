@@ -171,6 +171,8 @@ describe("工厂", () => {
       { DATABASE_URL: "postgresql://test:test@localhost/test" }
     );
     expect(pg).toBeInstanceOf(PgSqlDb);
+    // getPool 暴露底层连接池引用（宿主注入场景，如传给 omni-auth）
+    expect((pg as PgSqlDb).getPool()).toBeDefined();
 
     const coze = createSqlDb(
       { channel: "coze" },

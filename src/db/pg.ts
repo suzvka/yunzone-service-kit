@@ -53,6 +53,15 @@ export class PgSqlDb implements SqlDb {
     });
   }
 
+  /**
+   * 获取底层 pg 连接池引用（宿主注入场景：如将池传给 omni-auth 等外部库）。
+   * 仅非事务实例可用；事务代理已 override 此方法抛错。
+   */
+  getPool(): Pool {
+    // 非事务实例的 pool 恒为 Pool（见构造函数）；事务代理持有 PoolClient 并 override
+    return this.pool as Pool;
+  }
+
   async query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
     try {
       const { rows } = await this.pool.query(sql, params as never[]);
@@ -108,5 +117,9 @@ class PgSqlDbTransaction extends PgSqlDb {
 
   override async withTransaction<T>(_fn: (db: SqlDb) => Promise<T>): Promise<T> {
     throw new Error("不支持嵌套事务");
+  }
+
+  override getPool(): Pool {
+    throw new Error("事务代理不暴露连接池");
   }
 }
