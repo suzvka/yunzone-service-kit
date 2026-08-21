@@ -7,6 +7,7 @@
  * - yunzone-service-kit/registry — 泛型 Provider 注册中心基座（并存 Provider 模式）
  * - yunzone-service-kit/config   — 运行时配置层（env facets / 数据库 URL / baseUrl）
  * - yunzone-service-kit/ops      — 运维数据接口（报告聚合 + 管理后台公共逻辑）
+ * - yunzone-service-kit/auth     — Token Authority 服务契约（端点 / 请求 / 响应 / 错误码）
  */
 
 export * from "./core";
@@ -14,3 +15,4 @@ export * from "./db";
 export * from "./registry";
 export * from "./config";
 export * from "./ops";
+export * from "./auth/token-contract";
