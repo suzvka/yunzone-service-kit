@@ -7,8 +7,9 @@
  *
  * 类型解耦说明：Next.js 的 NextRequest/NextResponse 携带内部私有标记
  * （[INTERNALS] 等），不同 node_modules 物理副本间类型互不兼容。因此本模块
- * 不引入 NextRequest 作为参数类型：守卫内部按鸭子类型读取 `request.cookies()`，
- * 外层用宽松泛型 `THandler` 原样透传服务侧 handler，避免任何跨副本类型比较。
+ * 不引入 NextRequest 作为参数类型：守卫内部按鸭子类型读取 `request.cookies`
+ * （Next.js 15.3+/16 为 getter 属性，旧版为方法，两者兼容），外层用宽松泛型
+ * `THandler` 原样透传服务侧 handler，避免任何跨副本类型比较。
  */
 
 import { NextResponse } from "next/server";
@@ -26,9 +27,13 @@ export interface AdminRequestCookiesLike {
   get(name: string): { name: string; value: string } | undefined;
 }
 
-/** 鸭子类型：Next.js NextRequest 最小面 */
+/**
+ * 鸭子类型：Next.js NextRequest 最小面
+ * cookies 形态兼容：Next.js 15.3+/16 为 getter 属性（RequestCookies 实例），
+ * 旧版为方法（调用后返回 RequestCookies），守卫按运行时形态自适应。
+ */
 export interface AdminRouteRequestLike {
-  cookies(): AdminRequestCookiesLike;
+  cookies: AdminRequestCookiesLike | (() => AdminRequestCookiesLike);
 }
 
 /** 管理后台路由处理函数（守卫可承载的服务侧 handler 形态） */
@@ -61,7 +66,11 @@ export function requireAdminAuth<THandler extends LooseAdminRouteHandler>(
       );
     }
 
-    const session = request.cookies?.()?.get(ADMIN_SESSION_COOKIE)?.value;
+    // Next.js 15.3+/16 中 cookies 为 getter 属性，旧版为方法，按形态自适应读取
+    const cookiesLike = request.cookies;
+    const cookies =
+      typeof cookiesLike === "function" ? cookiesLike() : cookiesLike;
+    const session = cookies?.get(ADMIN_SESSION_COOKIE)?.value;
     const username = session
       ? validateSignedAdminSession(session, admin.password, {
           maxAgeSeconds: admin.sessionMaxAgeSeconds,

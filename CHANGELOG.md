@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.2 — 2026-08-21
+
+`/ops/next` 路由守卫修复：Next.js 15.3+/16 将 `NextRequest.cookies` 由方法改为 getter 属性，旧实现 `request.cookies?.()?.get(...)` 按函数调用抛 `TypeError: cookies is not a function`，导致全部 admin 接口 500 空响应体、前端 `res.json()` 报 Unexpected end of JSON input。
+
+- **`requireAdminAuth` cookie 读取双形态兼容**：运行时按 `typeof cookies === "function"` 自适应——函数形态按旧版调用，否则按 getter 属性直接读取；鸭子类型 `AdminRouteRequestLike.cookies` 声明为 `AdminRequestCookiesLike | (() => AdminRequestCookiesLike)`
+- 配套：`tests/next.test.ts` 新增守卫三态用例（503 禁用 / 401 未登录 / 放行透传），属性式（Next.js 16）与函数式（旧版）双形态全覆盖
+
 ## 0.11.1 — 2026-08-20
 
 `/db` 渠道值域扩展 `none`（显式无库声明）+ 配置错误类型统一。
