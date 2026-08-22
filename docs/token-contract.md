@@ -1,13 +1,15 @@
-# Token Authority 服务契约（共识版 v1.1）
+# Token Authority 服务契约（共识版 v1.2）
 
-> 版本：v1.1（2026-08）
+> 版本：v1.2（2026-08）
 > 来源：用户中心「服务凭证（Service Credential）证书契约需求单 v1.0」，经鉴权中心（yunzone_auth）与消费方（yunzone_user_center / WanyanAI）评审修订。
 > 单一事实源：本文件 + [src/auth/token-contract.ts](../src/auth/token-contract.ts) 类型定义。
 > 适用范围：Token Authority Service（鉴权中心）与宿主应用之间的服务凭证签发 / 校验 / 续期 / 吊销接口契约。
 
 ---
 
-## 0. 修订记录（v1.0 → v1.1）
+## 0. 修订记录（v1.0 → v1.2）
+
+### v1.1
 
 | # | 修订点 | 决策 |
 |---|---|---|
@@ -20,6 +22,13 @@
 | 7 | `revoke` | 固定幂等语义（删除 409 分支）；`productId` 可选（按 token 吊销时服务端推导） |
 | 8 | 错误契约 | 对齐实现错误码体系（`INVALID_ARGUMENT` / `UNAUTHENTICATED` 等）；补充防枚举条款 |
 | 9 | `issued_at` | 预留可选字段（服务端暂不返回，映射 `TokenRecord.createdAt`，后续版本提供） |
+
+### v1.2
+
+| # | 修订点 | 决策 |
+|---|---|---|
+| 10 | `claims.redirectUris` | **可选 → 服务凭证模式必填**（1~10 个合法 URL）。OAuth 授权回调白名单是授权页校验 `redirect_uri` 的单一事实源，漏填/错填会导致接入方登录报「redirect_uri does not match registered URIs」（WanyanAI 线上事故）；admin 签发与 v1 issue 两通道同步强制 |
+| 11 | 校验响应 `redirectUris` | 公开只读视图同步标记必填（服务凭证模式） |
 
 ---
 
@@ -72,7 +81,7 @@
 | `clientId` | string | ✓ | 凭证唯一标识（服务端生成 = token_hash，与顶层 `id` 一致） |
 | `name` | string | ✓ | 凭证名称（非空字符串） |
 | `confidential` | boolean | ✓ | 是否机密凭证（决定 secret 是否允许暴露于非安全环境） |
-| `redirectUris` | string[] | - | 授权回调地址白名单 |
+| `redirectUris` | string[] | ✓（服务凭证模式） | 授权回调地址白名单（签发必填，1~10 个） |
 | `clientUri` | string | - | 凭证关联的站点地址 |
 | `issuer` | string | - | 签发方 / 环境标识（`ISSUER_ID` env，默认 `token-authority`） |
 | `issued_at` | string(ISO8601) | - | **预留**：签发时间（映射 `TokenRecord.createdAt`，服务端暂不返回） |
@@ -88,7 +97,8 @@
 | `claims.type` | 服务凭证模式必填 `"client-credential"` | 由调用方声明，鉴权中心校验 |
 | `claims.name` | 服务凭证模式必填 | 非空字符串，缺失不降级签发 |
 | `claims.confidential` | 服务凭证模式必填 | 布尔值 |
-| `claims.redirectUris` / `claims.clientUri` | 可选 | 按需传入（URL 格式校验） |
+| `claims.redirectUris` | 服务凭证模式必填 | 1~10 个合法 URL，缺失/为空返回 400 `INVALID_ARGUMENT` |
+| `claims.clientUri` | 可选 | 按需传入（URL 格式校验） |
 | `claims` 扁平约束 | 服务凭证模式强制 | 除 `redirectUris` 外，禁止嵌套对象 / 数组（各语言消费方解析无歧义） |
 | `ttl` | 可选 | 有效秒数，默认 86400 |
 
