@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.13.0 — 2026-08-22
+
+新增 `/storage` 对象存储抽象模块（新导出子路径 `yunzone-service-kit/storage`），心智模型与 `/db` 完全同构；同期并入 `/db` 数据库连接串「分段输入」增强（原 0.12.0 排期内容，未单独发布）。
+
+### 新增 `/storage` — 对象存储抽象（storage-core）
+
+- **`ObjectStore` 契约**：`upload(params)` 上传返回 key / `getSignedUrl(key, expireSeconds?)` 生成签名 URL（禁止自行拼接）/ `delete(key)` / `exists(key)`，继承 `LifecycleAware`（init/disconnect 由组合根调度）；**key 即真理**——调用方直接组织 storage key（如 `avatars/user123.jpg`），无字段映射层，对应 db 的「SQL 字符串即真理」；契约内不声明 isAvailable（可用性与 db 同构：工厂创建时凭证解析 fail-fast）
+- **渠道三值域（`StorageChannel`）**：`s3`（通用 S3，实现需额外获取连接凭证 `S3_ENDPOINT_URL` / `S3_BUCKET_NAME`）/ `coze`（按平台注入行为运行，`COZE_BUCKET_*` 变量组）/ `none`（显式无存储声明，任何存储操作对其 fail-fast）——与 `DatabaseChannel` 同构，显式声明禁止嗅探
+- **`S3ObjectStore`（kit 官方渠道适配器）**：`@aws-sdk/client-s3` 实现（path-style 寻址兼容 MinIO / Coze 等非 AWS 端点），**一个适配器服务 s3/coze 两渠道**（渠道差异仅凭证解析，与 PgSqlDb 同构）；upload 不做隐式改名（key 即 fileName，防覆盖由调用方组织文件名）、签名 URL 用 `@aws-sdk/s3-request-presigner` 生成、HeadObject 404 归一化为 false、底层 SDK 错误统一包装 `ObjectStoreError`（保留 cause）；构造支持注入 `S3Client` 便于单测
+- **`resolveStorageChannel` / `createObjectStore` / `resolveStorageConfig`**：渠道解析唯一来源 `STORAGE_PROVIDER`（未设置默认 `s3`，不自动嗅探）；渠道工厂 switch 分派、none fail-fast；凭证解析带诊断快照（只输出 set/unset、不回显值）、凭证只设置其一即抛错（配置不完整 fail-fast，禁止隐式降级）
+- **错误族**：`ObjectStoreError` 基类 / `ObjectStoreConfigError`（配置错误；命名避开 db 已占用的 `StorageError` 族）
+- **kit 新增运行时依赖**：`@aws-sdk/client-s3` / `@aws-sdk/s3-request-presigner`（^3）
+- 配套：`tests/storage.test.ts` 新增 22 用例（契约形状 / 渠道解析 / 凭证解析 / 工厂分派 / S3 命令构造与错误归一化），全量 163 用例全绿；README 新增 `/storage` 章节与 `resolveStorageConfig` 工具表项；package.json exports 新增 `./storage` 子路径
+- 消费侧：yunzone_user_center `src/lib/storage`（StorageService 注册表 + URL 前缀路由）后续迁移为 kit 抽象（`STORAGE_PROVIDER=coze-s3` 改 `coze`），本次不随 kit 发布
+
+### `/db` 数据库连接串「分段输入」
+
+postgres 渠道支持 `DATABASE_PASSWORD` 单独提供原始明文密码，kit 负责 URL 编码（外部 PostgreSQL 部署痛点：运维手册写真实密码但 URL 特殊字符必须百分号编码，照填连接失败、转义值又与实际密码不一致）。
+
+- **`resolveDatabaseUrl` postgres 分支新增分段输入**：设置 `DATABASE_PASSWORD` 时解析 `DATABASE_URL`（此时 URL 不含密码、无歧义），以 `encodeURIComponent` 预编码后重建连接串，scheme / username / host / port / database / query（如 `sslmode`）原样保留；不设置时行为与存量完全一致（零破坏），coze 渠道不读该变量
+- **编码实现要点**：必须 `encodeURIComponent` 预编码再经 WHATWG `URL.password` 赋值——setter 的 userinfo percent-encode set 不包含 `%`，直接赋值会导致含 `%` 的密码被 pg 解码为错误值（静默连错）；预编码后含 `@ # : / ? % 空格、非 ASCII` 的密码均解码往返一致
+- **优先级与约束**：同时提供时以 `DATABASE_PASSWORD` 为准（覆盖 URL 内嵌已编码密码）；分段输入模式下 URL 的 userinfo 不得含未编码特殊字符（解析即错乱，无法恢复，靠文档约束）
+- **错误归一化**：`DATABASE_PASSWORD` 已设置而 `DATABASE_URL` 非法时，`new URL()` 的裸 `TypeError` 包装为 `StorageConfigError`（带诊断快照、密码值不回显），与其余配置错误风格一致
+- 配套：`tests/config.test.ts` 新增 6 组用例（存量兼容 / 明文编码与连接要素保留 / 特殊字符矩阵含 `%` 与中文 / 覆盖优先级 / 非法 URL 报错 / coze 回归与空密码）；`.env.example` 补充 `DATABASE_PASSWORD` 说明
+- 消费侧：yunzone_auth 等基于 `createSqlDb({ channel })` 的服务无需代码改动，部署时可选切换为分段输入写法（运维手册与实际配置零歧义）
+
 ## 0.11.2 — 2026-08-21
 
 `/ops/next` 路由守卫修复：Next.js 15.3+/16 将 `NextRequest.cookies` 由方法改为 getter 属性，旧实现 `request.cookies?.()?.get(...)` 按函数调用抛 `TypeError: cookies is not a function`，导致全部 admin 接口 500 空响应体、前端 `res.json()` 报 Unexpected end of JSON input。

@@ -12,6 +12,7 @@ import {
   resolveDatabaseUrl,
   resolveListenAddress,
 } from "../src/config";
+import { StorageConfigError } from "../src/db";
 
 afterEach(() => {
   delete process.env.KIT_TEST_REQUIRED;
@@ -123,6 +124,129 @@ describe("resolveDatabaseUrl", () => {
     expect(() =>
       resolveDatabaseUrl({ env: { DATABASE_PROVIDER: "mysql" } })
     ).toThrowError(/Unknown provider: "mysql". Supported: postgres, coze/);
+  });
+
+  it("未设置 DATABASE_PASSWORD 时原样返回（存量兼容，含编码密码）", () => {
+    const plain = resolveDatabaseUrl({
+      provider: "postgres",
+      env: { DATABASE_URL: "postgresql://u:p@host:5432/db" },
+    });
+    expect(plain).toBe("postgresql://u:p@host:5432/db");
+
+    const encoded = resolveDatabaseUrl({
+      provider: "postgres",
+      env: {
+        DATABASE_URL: "postgresql://u:yunzone%40auth%23@host:5432/db?sslmode=disable",
+      },
+    });
+    expect(encoded).toBe("postgresql://u:yunzone%40auth%23@host:5432/db?sslmode=disable");
+  });
+
+  it("分段输入：DATABASE_PASSWORD 按明文编码，host/port/db/query 原样保留", () => {
+    const url = resolveDatabaseUrl({
+      provider: "postgres",
+      env: {
+        DATABASE_URL: "postgresql://user@host:5432/db?sslmode=disable",
+        DATABASE_PASSWORD: "yunzone@auth#",
+      },
+    });
+    expect(url).toBe("postgresql://user:yunzone%40auth%23@host:5432/db?sslmode=disable");
+    const parsed = new URL(url);
+    // Node URL getter 返回未解码串；decodeURIComponent 模拟 pg 客户端（pg-connection-string）解码
+    expect(decodeURIComponent(parsed.password)).toBe("yunzone@auth#");
+    expect(parsed.username).toBe("user");
+    expect(parsed.hostname).toBe("host");
+    expect(parsed.port).toBe("5432");
+    expect(parsed.pathname).toBe("/db");
+    expect(parsed.searchParams.get("sslmode")).toBe("disable");
+  });
+
+  it("分段输入：特殊字符矩阵解码往返一致（含 % 与中文）", () => {
+    const matrix = [
+      "yunzone@auth#",
+      "p@:ss",
+      "p%40ss",
+      "a b/c?d#e%f:g@h",
+      "密码@中文#",
+    ];
+    for (const password of matrix) {
+      const url = resolveDatabaseUrl({
+        provider: "postgres",
+        env: {
+          DATABASE_URL: "postgresql://user@host:5432/db?sslmode=disable",
+          DATABASE_PASSWORD: password,
+        },
+      });
+      const parsed = new URL(url);
+      expect(decodeURIComponent(parsed.password)).toBe(password);
+      expect(parsed.hostname).toBe("host");
+      expect(parsed.port).toBe("5432");
+      expect(parsed.pathname).toBe("/db");
+      expect(parsed.searchParams.get("sslmode")).toBe("disable");
+    }
+  });
+
+  it("分段输入：DATABASE_PASSWORD 覆盖 URL 内嵌的已编码密码", () => {
+    const url = resolveDatabaseUrl({
+      provider: "postgres",
+      env: {
+        DATABASE_URL: "postgresql://user:old%40pass@host:5432/db",
+        DATABASE_PASSWORD: "new#pass",
+      },
+    });
+    expect(decodeURIComponent(new URL(url).password)).toBe("new#pass");
+    expect(url).not.toContain("old%40pass");
+  });
+
+  it("分段输入：URL 非法时抛 StorageConfigError 且不回显密码值", () => {
+    expect(() =>
+      resolveDatabaseUrl({
+        provider: "postgres",
+        env: {
+          DATABASE_URL: "postgresql://user@host:badport/db",
+          DATABASE_PASSWORD: "secret@value",
+        },
+      })
+    ).toThrowError(StorageConfigError);
+    expect(() =>
+      resolveDatabaseUrl({
+        provider: "postgres",
+        env: {
+          DATABASE_URL: "postgresql://user@host:badport/db",
+          DATABASE_PASSWORD: "secret@value",
+        },
+      })
+    ).toThrowError(/not a valid URL while DATABASE_PASSWORD is set.*Diagnostic snapshot/s);
+    try {
+      resolveDatabaseUrl({
+        provider: "postgres",
+        env: {
+          DATABASE_URL: "postgresql://user@host:badport/db",
+          DATABASE_PASSWORD: "secret@value",
+        },
+      });
+    } catch (err) {
+      expect((err as Error).message).not.toContain("secret@value");
+    }
+  });
+
+  it("分段输入：空密码视为未设置，行为同存量", () => {
+    const url = resolveDatabaseUrl({
+      provider: "postgres",
+      env: { DATABASE_URL: "postgresql://u:p@host:5432/db", DATABASE_PASSWORD: "" },
+    });
+    expect(url).toBe("postgresql://u:p@host:5432/db");
+  });
+
+  it("coze 渠道不读 DATABASE_PASSWORD（行为不变）", () => {
+    const url = resolveDatabaseUrl({
+      provider: "coze",
+      env: {
+        PGDATABASE_URL: "postgresql://u:p@host:5432/db?sslmode=require",
+        DATABASE_PASSWORD: "ignored@pass",
+      },
+    });
+    expect(url).toBe("postgresql://u:p@host:5432/db");
   });
 });
 

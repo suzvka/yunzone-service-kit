@@ -17,6 +17,12 @@ export {
   type ResolveDatabaseUrlOptions,
 } from "./database";
 export {
+  resolveStorageConfig,
+  type StorageProviderKind,
+  type ResolveStorageConfigOptions,
+  type ResolvedStorageConfig,
+} from "./storage";
+export {
   resolveBaseUrl,
   resolveListenAddress,
   type ResolveBaseUrlOptions,

@@ -10,11 +10,20 @@
  * - none：显式无库声明；本函数不接受该渠道（由 createSqlDb 前置拦截），
  *   直接传入时按非法 provider 抛 StorageConfigError
  *
+ * 分段输入（可选，仅 postgres 渠道）：DATABASE_PASSWORD 单独提供原始明文密码，
+ * kit 负责 URL 编码（与 coze 分支的 encodeURIComponent 一致）；设置后覆盖 URL 内嵌密码。
+ * 约束：分段输入模式下 DATABASE_URL 的 userinfo 不应含密码，且不得含未编码的
+ * 特殊字符（@ # : / ? % 空格等）——URL 解析阶段即错乱，无法恢复，只能文档约束。
+ *
  * 示例：
  * ```
  * # 通用 PostgreSQL
  * DATABASE_PROVIDER=postgres
  * DATABASE_URL=postgresql://user:pass@host:5432/db
+ *
+ * # 分段输入：密码原始明文，含任意字符（@ # : / ? % 空格等），kit 自动编码
+ * DATABASE_URL=postgresql://user@host:5432/db?sslmode=disable
+ * DATABASE_PASSWORD=yunzone@auth#
  *
  * # Coze 平台数据库集成
  * DATABASE_PROVIDER=coze
@@ -77,6 +86,28 @@ export function resolveDatabaseUrl(options?: ResolveDatabaseUrlOptions): string 
           "directory env contains `DATABASE_PROVIDER=coze` before `next build`."
       );
     }
+
+    // 分段输入（可选）：密码原始明文，kit 负责 URL 编码。
+    // 注意：必须先 encodeURIComponent 预编码再赋值——WHATWG password setter
+    // 不编码 `%`，直接赋值会导致含 `%` 的密码被 pg 解码为错误值（静默连错）。
+    if (env.DATABASE_PASSWORD) {
+      try {
+        const parsed = new URL(url);
+        parsed.password = encodeURIComponent(env.DATABASE_PASSWORD);
+        return parsed.toString();
+      } catch {
+        throw new StorageConfigError(
+          "[database/provider] DATABASE_URL is not a valid URL while DATABASE_PASSWORD is set. " +
+            "In segmented mode the URL must be password-free and contain no raw " +
+            "special chars (@ # : / ? % space) in userinfo. " +
+            "Diagnostic snapshot: " +
+            `{ DATABASE_PROVIDER=${env.DATABASE_PROVIDER || "(unset)"}, ` +
+            `DATABASE_URL=${env.DATABASE_URL ? "***set***" : "(unset)"}, ` +
+            `DATABASE_PASSWORD=***set*** }.`
+        );
+      }
+    }
+
     return url;
   }
 

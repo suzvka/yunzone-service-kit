@@ -1,6 +1,6 @@
 # yunzone-service-kit
 
-云洲服务集群通用基础设施：**插件式 Provider 注册中心基座**（`/registry`）、**运行时配置层**（`/config`）、**SQL 数据库抽象**（`/db`）与**运维数据接口**（`/ops`）。
+云洲服务集群通用基础设施：**插件式 Provider 注册中心基座**（`/registry`）、**运行时配置层**（`/config`）、**SQL 数据库抽象**（`/db`）、**对象存储抽象**（`/storage`）与**运维数据接口**（`/ops`）。
 
 纯 TypeScript 实现，零框架耦合（不依赖 Next.js/React），任何 Node 服务可直接引用。
 
@@ -94,6 +94,7 @@ const env = loadEnv(envSchema, { dotenv: true });
 | `defineEnv` / `loadEnv` / `EnvConfigError` / `envSnapshot` | zod 环境变量契约声明与懒解析；失败抛出带诊断快照的错误（**只显示 set/unset，不回显变量值**） |
 | `parseDotEnv` / `loadDotEnv` / `EnvFileError` | 本地 `.env` 文件解析与加载（默认不覆盖平台注入变量）；`loadEnv` 可传 `{ dotenv: true }` 一键组合 |
 | `resolveDatabaseUrl` | 数据库连接 URL 解析：`DATABASE_PROVIDER` 显式选择 `postgres`（`DATABASE_URL`）/ `coze`（Coze 平台 PG 变量组），不自动嗅探 |
+| `resolveStorageConfig` | 对象存储凭证解析：`STORAGE_PROVIDER` 显式选择 `s3`（`S3_ENDPOINT_URL` / `S3_BUCKET_NAME`）/ `coze`（Coze 平台 `COZE_BUCKET_*` 变量组），凭证可选（缺省走 SDK 默认凭证链），不自动嗅探 |
 | `resolveBaseUrl` | 服务对外 baseUrl 解析链：`PUBLIC_BASE_URL` → `BETTER_AUTH_URL`（历史遗留兼容键）→（DEV 回退）→ `PROJECT_DOMAIN_DEFAULT` → fallback |
 | `resolveListenAddress` | 监听地址：`HOSTNAME`（默认 `0.0.0.0`）+ `PORT`（默认 `5000`；平台旧名 `DEPLOY_RUN_PORT` 经适配层回退） |
 | `normalizeDeployEnv` / `deploymentAliases` | 部署适配层（TICKET-001）：按 `DEPLOY_PROVIDER` 分派（缺省 `self` 通用模式，中立键直读；Coze 部署需显式设置 `DEPLOY_PROVIDER=coze`），把平台注入旧名**读取时**回退映射到中立键（不写 `process.env`） |
@@ -128,6 +129,27 @@ const channel = resolveDatabaseChannel(); // DATABASE_PROVIDER → "postgres" | 
 const db = createSqlDb({ channel });     // postgres → DATABASE_URL；coze → 平台注入变量组
 
 const rows = await db.query("SELECT id FROM users WHERE name = $1", ["alice"]);
+```
+
+### `/storage` — 对象存储抽象
+
+集群统一对象存储操作心智模型，与 `/db` 的 `SqlDb` 抽象**完全同构**：**key 即真理**，调用方直接组织 storage key（如 `avatars/user123.jpg`），无字段映射层。
+
+- `ObjectStore`：存储执行器接口——`upload(params)` 上传返回 key、`getSignedUrl(key, expireSeconds?)` 生成签名 URL（禁止自行拼接）、`delete(key)` 删除、`exists(key)` 存在性检查；继承 `LifecycleAware`（init/disconnect 由组合根调度）
+- 渠道三值域（`StorageChannel`）：`s3`（通用 S3，实现需额外获取连接凭证 `S3_ENDPOINT_URL` / `S3_BUCKET_NAME`）/ `coze`（按平台注入行为运行，`COZE_BUCKET_*` 变量组）/ `none`（显式无存储声明，任何存储操作对其 fail-fast）——操作语义一致，仅连接凭证获取方式不同
+- `S3ObjectStore`：kit 官方渠道适配器（`@aws-sdk/client-s3` 实现，path-style 寻址兼容非 AWS 端点；`s3` / `coze` 两渠道共用，渠道差异仅凭证解析；支持注入 `S3Client` 便于单测）
+- `resolveStorageChannel`：渠道解析，唯一来源 `STORAGE_PROVIDER`，未设置默认 `s3`（不自动嗅探）
+- `createObjectStore({ channel })`：渠道工厂——按 channel 分派凭证获取并返回 `S3ObjectStore` 实例；需要自定义 S3Client 时直接 `new S3ObjectStore(config, options)`
+- 错误族：`ObjectStoreError` 基类、`ObjectStoreConfigError`（配置错误；命名避开 db 已占用的 `StorageError` 族）
+
+```ts
+import { createObjectStore, resolveStorageChannel } from "yunzone-service-kit/storage";
+
+const channel = resolveStorageChannel(); // STORAGE_PROVIDER → "s3" | "coze" | "none"
+const store = createObjectStore({ channel }); // s3 → S3_* 变量；coze → 平台注入变量组；none → fail-fast
+
+const key = await store.upload({ fileContent: buffer, fileName: "avatars/user123.jpg", contentType: "image/jpeg" });
+const url = await store.getSignedUrl(key);
 ```
 
 ### `/ops` — 运维数据接口（纯逻辑层）
