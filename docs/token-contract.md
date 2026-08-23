@@ -1,13 +1,21 @@
-# Token Authority 服务契约（共识版 v1.2）
+# Token Authority 服务契约（共识版 v1.3）
 
-> 版本：v1.2（2026-08）
+> 版本：v1.3（2026-08）
 > 来源：用户中心「服务凭证（Service Credential）证书契约需求单 v1.0」，经鉴权中心（yunzone_auth）与消费方（yunzone_user_center / WanyanAI）评审修订。
 > 单一事实源：本文件 + [src/auth/token-contract.ts](../src/auth/token-contract.ts) 类型定义。
 > 适用范围：Token Authority Service（鉴权中心）与宿主应用之间的服务凭证签发 / 校验 / 续期 / 吊销接口契约。
 
 ---
 
-## 0. 修订记录（v1.0 → v1.2）
+## 0. 修订记录（v1.0 → v1.3）
+
+### v1.3
+
+| # | 修订点 | 决策 |
+|---|---|---|
+| 12 | `ttl` 语义 | issue / refresh 的 `ttl` 均改为可选且**无默认值**：不填 = 不设过期时间（永不过期，响应 `expiresAt: null`）。鉴权中心为通用基建，不评判调用方对过期时间的设置 |
+| 13 | 移除 TTL 硬上限 | 删除 `MAX_TOKEN_TTL_SECONDS` 全局上限与 `TTL_LIMIT_EXCEEDED` 错误码（基建不评判业务；凭证生命周期终结由管理员操作决定） |
+| 14 | 自动续签 | 服务端策略（管理员显式配置）不受任何上限约束，无上限持续直到被吊销 / 换发 / 注销 |
 
 ### v1.1
 
@@ -100,13 +108,13 @@
 | `claims.redirectUris` | 服务凭证模式必填 | 1~10 个合法 URL，缺失/为空返回 400 `INVALID_ARGUMENT` |
 | `claims.clientUri` | 可选 | 按需传入（URL 格式校验） |
 | `claims` 扁平约束 | 服务凭证模式强制 | 除 `redirectUris` 外，禁止嵌套对象 / 数组（各语言消费方解析无歧义） |
-| `ttl` | 可选 | 有效秒数，默认 86400 |
+| `ttl` | 可选 | 有效秒数；**不填 = 永不过期**（响应 `expiresAt: null`），鉴权中心不评判调用方的过期时间设置 |
 
 > 服务凭证模式的严格校验由鉴权中心在 issue 端点强制（`claims.type === "client-credential"` 时），普通用户 token 签发的 claims 保持自由。
 
 ### 3.4 续期 / 吊销
 
-- `refresh`：返回 `{ success, expiresAt }`，**令牌值不变，仅延长过期时间**；续期后总有效期不得超过签发起算的产品上限（硬上限，防无限续期，超限返回 400 `TTL_LIMIT_EXCEEDED`）。上限配置 `TOKEN_MAX_TTL_SECONDS`（默认 31536000 = 365 天，全局上限，产品级差异化留待后续）。
+- `refresh`：返回 `{ success, expiresAt }`，**令牌值不变，仅延长过期时间**；调用方描述 `ttl` 则按 `ttl` 续期（`expiresAt` 为新过期时间），**不填 `ttl` = 永不过期**（`expiresAt: null`）。无 TTL 硬上限（v1.3 起移除）。
 - `revoke`：吊销后凭证立即失效；**幂等语义**——重复吊销已吊销凭证返回 `{ success: true }`（对不存在的 token 返回 404 `TOKEN_NOT_FOUND`）。按 token 吊销时 `productId` 可省略（服务端从记录推导归属产品做隔离校验）。
 
 ---
@@ -118,7 +126,6 @@
 | HTTP | code | 场景 |
 |---|---|---|
 | 400 | `INVALID_ARGUMENT` | 缺少必填字段、字段格式错误、claims 违反扁平约束 |
-| 400 | `TTL_LIMIT_EXCEEDED` | 续期后总有效期超出产品上限 |
 | 401 | `UNAUTHENTICATED` | 调用方凭证无效或缺失 |
 | 403 | `PRODUCT_NOT_ALLOWED` | 真实凭证调用方越权操作其他产品 |
 | 404 | `TOKEN_NOT_FOUND` | refresh / revoke 目标 token 不存在 |
@@ -144,7 +151,7 @@
 1. 对任意已签发凭证执行 `introspect` / `lookup`，响应均包含第 3.1、3.2 节全部必填字段，且值与签发时一致。
 2. 签发请求缺少 `productId`、`userId` 或服务凭证模式的 `claims.name` / `claims.confidential` 时返回 400 `INVALID_ARGUMENT`，不允许降级签发。
 3. `token`（secret）仅出现在 `issue` 响应一次。
-4. `refresh` 存在硬性总有效期上限（超限 400 `TTL_LIMIT_EXCEEDED`）；`revoke` 幂等。
+4. `refresh` 按调用方 `ttl` 续期（不填 = 永不过期，`expiresAt: null`）；`revoke` 幂等。
 5. 错误响应符合第 4 节统一格式；无效 token 的 introspect / lookup 符合防枚举条款。
 
 ---
@@ -153,5 +160,4 @@
 
 | 配置 | 默认 | 语义 |
 |---|---|---|
-| `MAX_TOKEN_TTL_SECONDS` | `31536000`（365 天） | 凭证总生命周期硬上限（续期后过期时间不得晚于签发时刻 + 上限） |
 | `ISSUER_ID` | `token-authority` | 签发方 / 环境标识，写入凭证公开 claims（可选字段） |
