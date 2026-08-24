@@ -53,9 +53,10 @@ export class S3ObjectStore implements ObjectStore {
       options?.client ??
       new S3Client({
         endpoint: config.endpointUrl,
-        // 兼容 MinIO / Coze 等非 AWS 原生端点：强制 path-style 寻址
-        forcePathStyle: true,
-        region: "us-east-1",
+        // 兼容 MinIO / Coze 等非 AWS 原生端点：默认 path-style；
+        // 阿里云 OSS 等要求 virtual-hosted 的服务通过 S3_FORCE_PATH_STYLE=false 关闭
+        forcePathStyle: config.forcePathStyle,
+        region: config.region,
         ...(config.credentials
           ? {
               credentials: {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.0 — 2026-08-24
+
+`/storage` S3 兼容适配器可配置化改造：支持阿里云 OSS 等要求 virtual-hosted 寻址与地域签名的 S3 兼容服务。
+
+- **`ResolvedStorageConfig` 新增 `forcePathStyle: boolean` 与 `region: string` 字段**：`S3ObjectStore` 构造 `S3Client` 时以配置替代原先硬编码的 `forcePathStyle: true` / `region: "us-east-1"`
+- **`s3` 渠道读取新环境变量**：`S3_FORCE_PATH_STYLE`（默认 `true`，`"0"/"false"/"no"` 归一为 `false`）与 `S3_REGION`（默认 `"us-east-1"`）；`coze` 渠道读 `COZE_BUCKET_FORCE_PATH_STYLE`（region 恒为 `"us-east-1"`）
+- **兼容性**：默认值与旧行为完全一致（path-style + us-east-1），存量 MinIO / Coze 等端点到零影响；阿里云 OSS 场景配置 `S3_FORCE_PATH_STYLE=false` + `S3_REGION=<实际地域>`（如 `cn-hangzhou`）即可
+- **背景**：阿里云 OSS 的 S3 兼容端点禁止 path-style（`SecondLevelDomainForbidden`），且 SigV4 签名 credential scope 需实际地域（硬编码 `us-east-1` 会导致 `SignatureDoesNotMatch`）
+- 配套：`tests/storage.test.ts` 新增 3 组用例（OSS 覆盖默认 / bool 归一化矩阵 / coze 关闭 path-style），并修正 2 处 `toEqual` 全量断言，全量 166 用例全绿
+- 消费侧：yunzone_user_center 接入阿里云 OSS（`STORAGE_PROVIDER=s3` + 上述变量），见 CouplingRecord
+
 ## 0.13.0 — 2026-08-22
 
 新增 `/storage` 对象存储抽象模块（新导出子路径 `yunzone-service-kit/storage`），心智模型与 `/db` 完全同构；同期并入 `/db` 数据库连接串「分段输入」增强（原 0.12.0 排期内容，未单独发布）。

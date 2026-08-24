@@ -137,6 +137,8 @@ describe("resolveStorageConfig", () => {
       endpointUrl: "https://s3.example.com",
       bucket: "my-bucket",
       credentials: undefined,
+      forcePathStyle: true,
+      region: "us-east-1",
     });
   });
 
@@ -165,7 +167,55 @@ describe("resolveStorageConfig", () => {
       endpointUrl: "https://coze-s3.example.com",
       bucket: "coze-bucket",
       credentials: undefined,
+      forcePathStyle: true,
+      region: "us-east-1",
     });
+  });
+
+  it("s3 渠道：S3_FORCE_PATH_STYLE=false 与 S3_REGION 覆盖默认值", () => {
+    const config = resolveStorageConfig({
+      provider: "s3",
+      env: {
+        S3_ENDPOINT_URL: "https://s3.oss-cn-hangzhou.aliyuncs.com",
+        S3_BUCKET_NAME: "my-bucket",
+        S3_FORCE_PATH_STYLE: "false",
+        S3_REGION: "cn-hangzhou",
+      },
+    });
+    expect(config.forcePathStyle).toBe(false);
+    expect(config.region).toBe("cn-hangzhou");
+  });
+
+  it("s3 渠道：S3_FORCE_PATH_STYLE 对 0/false/no 归一为 false，其余为 true", () => {
+    const base = {
+      S3_ENDPOINT_URL: "https://s3.example.com",
+      S3_BUCKET_NAME: "my-bucket",
+    };
+    for (const v of ["0", "false", "FALSE", "no"]) {
+      expect(
+        resolveStorageConfig({ provider: "s3", env: { ...base, S3_FORCE_PATH_STYLE: v } })
+          .forcePathStyle
+      ).toBe(false);
+    }
+    for (const v of ["1", "true", "yes", "anything"]) {
+      expect(
+        resolveStorageConfig({ provider: "s3", env: { ...base, S3_FORCE_PATH_STYLE: v } })
+          .forcePathStyle
+      ).toBe(true);
+    }
+  });
+
+  it("coze 渠道：COZE_BUCKET_FORCE_PATH_STYLE=false 关闭 path-style（region 恒为 us-east-1）", () => {
+    const config = resolveStorageConfig({
+      provider: "coze",
+      env: {
+        COZE_BUCKET_ENDPOINT_URL: "https://coze-s3.example.com",
+        COZE_BUCKET_NAME: "coze-bucket",
+        COZE_BUCKET_FORCE_PATH_STYLE: "false",
+      },
+    });
+    expect(config.forcePathStyle).toBe(false);
+    expect(config.region).toBe("us-east-1");
   });
 
   it("s3 凭证缺失抛 ObjectStoreConfigError，诊断快照不回显值", () => {
@@ -285,6 +335,8 @@ describe("S3ObjectStore 适配器", () => {
   const baseConfig = {
     endpointUrl: "https://s3.example.com",
     bucket: "my-bucket",
+    forcePathStyle: true,
+    region: "us-east-1",
   };
 
   it("upload 构造 PutObjectCommand（key 即 fileName）并返回 fileName", async () => {

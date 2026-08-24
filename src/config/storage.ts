@@ -49,6 +49,13 @@ export interface ResolvedStorageConfig {
   bucket: string;
   /** 访问凭证（缺省 undefined 时走 SDK 默认凭证链） */
   credentials?: { accessKeyId: string; secretAccessKey: string };
+  /**
+   * 是否强制 path-style 寻址（默认 true，兼容 MinIO 等）
+   * 阿里云 OSS 等要求 virtual-hosted 的服务需设为 false
+   */
+  forcePathStyle: boolean;
+  /** S3Client 签名 region（缺省 "us-east-1"；OSS 需设为实际地域如 "cn-hangzhou"） */
+  region: string;
 }
 
 /**
@@ -101,6 +108,8 @@ export function resolveStorageConfig(
       endpointUrl,
       bucket,
       credentials: extractCredentials(env, "S3"),
+      forcePathStyle: extractBool(env, "S3_FORCE_PATH_STYLE", true),
+      region: env.S3_REGION || "us-east-1",
     };
   }
 
@@ -129,6 +138,8 @@ export function resolveStorageConfig(
     endpointUrl,
     bucket,
     credentials: extractCredentials(env, "COZE_BUCKET"),
+    forcePathStyle: extractBool(env, "COZE_BUCKET_FORCE_PATH_STYLE", true),
+    region: "us-east-1",
   };
 }
 
@@ -154,4 +165,17 @@ function extractCredentials(
     );
   }
   return { accessKeyId, secretAccessKey };
+}
+
+/**
+ * 提取布尔配置：环境变量为 "0"/"false"/"no" → false，其余 → true（含未设置时取默认值）
+ */
+function extractBool(
+  env: Record<string, string | undefined>,
+  key: string,
+  defaultValue: boolean
+): boolean {
+  const raw = env[key];
+  if (raw === undefined || raw === "") return defaultValue;
+  return !["0", "false", "no"].includes(raw.trim().toLowerCase());
 }
