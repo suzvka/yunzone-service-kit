@@ -10,8 +10,9 @@ import {
   createObjectStore,
   resolveStorageChannel,
 } from "../src/storage";
-import type { ObjectStore, UploadParams } from "../src/storage";
+import type { ObjectStore, UploadParams, GetUploadUrlOptions } from "../src/storage";
 import { resolveStorageConfig } from "../src/config";
+import { getSignedUrl as awsGetSignedUrlMock } from "@aws-sdk/s3-request-presigner";
 
 // 签名 URL 生成依赖真实 S3Client 配置，单测只验证委托参数与返回面
 vi.mock("@aws-sdk/s3-request-presigner", () => ({
@@ -44,6 +45,11 @@ class StubObjectStore implements ObjectStore {
 
   async getSignedUrl(key: string, _expireSeconds?: number): Promise<string> {
     this.calls.push({ kind: "getSignedUrl", key });
+    return this.urlResult;
+  }
+
+  async getUploadUrl(options: GetUploadUrlOptions): Promise<string> {
+    this.calls.push({ kind: "getUploadUrl", key: options.key });
     return this.urlResult;
   }
 
@@ -113,6 +119,17 @@ describe("ObjectStore 契约形状", () => {
       { kind: "delete", key: "a/b.jpg" },
       { kind: "exists", key: "a/b.jpg" },
     ]);
+  });
+
+  it("getUploadUrl 按 options 透传（key 参与调用，返回裸 URL）", async () => {
+    const stub = new StubObjectStore();
+    const url = await stub.getUploadUrl({
+      key: "avatars/user123.jpg",
+      contentType: "image/jpeg",
+      expireSeconds: 300,
+    });
+    expect(url).toBe("https://signed.example/1");
+    expect(stub.calls).toEqual([{ kind: "getUploadUrl", key: "avatars/user123.jpg" }]);
   });
 
   it("生命周期钩子可调用（继承 LifecycleAware）", async () => {
@@ -372,6 +389,63 @@ describe("S3ObjectStore 适配器", () => {
 
     const url2 = await store.getSignedUrl("a/b.jpg", 600);
     expect(url2).toBe("https://signed.example/600");
+  });
+
+  it("getUploadUrl 构造 PutObjectCommand 并委托 presigner（默认 300s，可覆盖）", async () => {
+    const client = makeStubClient();
+    const store = new S3ObjectStore(baseConfig, { client });
+    const mockFn = vi.mocked(awsGetSignedUrlMock);
+
+    const url = await store.getUploadUrl({
+      key: "avatars/user123.jpg",
+      contentType: "image/jpeg",
+    });
+    expect(url).toBe("https://signed.example/300");
+
+    const [callClient, command, options] = mockFn.mock.calls.at(-1)!;
+    expect(callClient).toBe(client);
+    expect(command.constructor.name).toBe("PutObjectCommand");
+    expect((command as { input: unknown }).input).toEqual({
+      Bucket: "my-bucket",
+      Key: "avatars/user123.jpg",
+      ContentType: "image/jpeg",
+    });
+    expect(options).toEqual({ expiresIn: 300 });
+
+    const url2 = await store.getUploadUrl({ key: "a/b.jpg", expireSeconds: 600 });
+    expect(url2).toBe("https://signed.example/600");
+    expect(mockFn.mock.calls.at(-1)![2]).toEqual({ expiresIn: 600 });
+  });
+
+  it("getUploadUrl 未传 contentType 时命令不含 ContentType 字段", async () => {
+    const client = makeStubClient();
+    const store = new S3ObjectStore(baseConfig, { client });
+
+    await store.getUploadUrl({ key: "a/b.jpg" });
+    const command = vi.mocked(awsGetSignedUrlMock).mock.calls.at(-1)![1];
+    expect((command as { input: unknown }).input).toEqual({
+      Bucket: "my-bucket",
+      Key: "a/b.jpg",
+    });
+  });
+
+  it("getUploadUrl 签名异常包装为 ObjectStoreError 并保留 cause", async () => {
+    const client = makeStubClient();
+    const store = new S3ObjectStore(baseConfig, { client });
+    const mockFn = vi.mocked(awsGetSignedUrlMock);
+
+    mockFn.mockRejectedValueOnce(new Error("sign fail"));
+    await expect(store.getUploadUrl({ key: "a/b.jpg" })).rejects.toBeInstanceOf(
+      ObjectStoreError
+    );
+
+    mockFn.mockRejectedValueOnce(new Error("sign fail"));
+    try {
+      await store.getUploadUrl({ key: "a/b.jpg" });
+    } catch (err) {
+      expect((err as Error).cause).toBeInstanceOf(Error);
+      expect(((err as Error).cause as Error).message).toBe("sign fail");
+    }
   });
 
   it("delete 构造 DeleteObjectCommand 并返回 true（幂等）", async () => {

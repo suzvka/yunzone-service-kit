@@ -30,6 +30,23 @@ export interface UploadParams {
   contentType?: string;
 }
 
+/** 上传预签名 URL 参数 */
+export interface GetUploadUrlOptions {
+  /**
+   * 目标存储 key（即最终落库的 key）。
+   * 调用方负责组织目录前缀（如 "avatars/user123.jpg"）并保证唯一性，本契约不校验前缀。
+   */
+  key: string;
+  /**
+   * 固定 MIME 类型；签名时指定后，客户端 PUT 应携带一致值。
+   * 注意：是否强制一致取决于对象存储实现——AWS S3 返回 403 拒绝，
+   * 阿里云 OSS 不强制（实测不一致仍 200 通过）；需要强制 MIME 时由调用方校验。
+   */
+  contentType?: string;
+  /** 有效期秒数；默认 300（写签名泄露代价高于读签名，短时效为安全默认值，可显式覆盖） */
+  expireSeconds?: number;
+}
+
 /**
  * 对象存储执行器接口（storage-core 契约）
  *
@@ -52,6 +69,17 @@ export interface ObjectStore extends LifecycleAware {
    * 禁止自行拼接 URL，必须使用 SDK 生成
    */
   getSignedUrl(key: string, expireSeconds?: number): Promise<string>;
+
+  /**
+   * 根据 storage key 生成「上传（PUT）」预签名 URL
+   *
+   * 语义：返回一个临时 URL，持有者可在有效期内以 PUT 方法向该 key 直写文件。
+   * 对比 getSignedUrl（GET 读签名），本方法面向客户端直写场景。
+   * 禁止自行拼接 URL，必须使用 SDK 生成。
+   * 时效默认 300s：写签名独立安全默认（与 getSignedUrl 的 defaultExpireSeconds
+   * 机制不同系有意为之，见 S3ObjectStore 实现）。
+   */
+  getUploadUrl(options: GetUploadUrlOptions): Promise<string>;
 
   /** 删除文件 */
   delete(key: string): Promise<boolean>;

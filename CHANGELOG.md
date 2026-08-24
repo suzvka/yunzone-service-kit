@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.0 — 2026-08-24
+
+`/storage` 契约新增「上传预签名 URL（PUT，客户端直写）」能力：`ObjectStore.getUploadUrl(options)`。
+
+- **`ObjectStore` 契约追加 `getUploadUrl(options: GetUploadUrlOptions): Promise<string>`**：返回一个临时 URL，持有者可在有效期内以 `PUT` 方法向指定 key 直写文件（客户端直写场景，数据流不经过应用服务器）；与 `getSignedUrl`（GET 读签名）对称，同样禁止自行拼接 URL（必须 SDK 生成）。既有 4 方法（`upload` / `getSignedUrl` / `delete` / `exists`）签名零改动，纯增量
+- **新增 `GetUploadUrlOptions` 导出**：`key`（最终落库 key，调用方组织目录前缀并保证唯一性，kit 不校验前缀）/ `contentType?`（固定 MIME）/ `expireSeconds?`（默认 **300**）
+- **写签名默认 300s 为独立安全默认**：与读签名 `defaultExpireSeconds`（构造可注入，默认 86400）机制**有意不同**——写签名泄露代价高于读签名，短时效最小化泄露窗口，注释与 JSDoc 已显式声明，不引入新的构造选项
+- **Content-Type 强制一致依赖对象存储实现**：签名时指定 `contentType` 后，AWS S3 对不一致的客户端 PUT 返回 403；阿里云 OSS 实测**不强制**（不一致仍 200 通过），JSDoc 已如实声明差异并注明「需要强制 MIME 时由调用方校验」
+- **渠道零成本覆盖**：`S3ObjectStore` 同时服务 `s3` / `coze` 渠道（渠道差异仅凭证获取方式），新方法自动生效；`none` 渠道工厂 fail-fast 行为不变
+- 配套：`tests/storage.test.ts` 新增 4 用例（契约形状透传 / PutObjectCommand 构造与 expiresIn 默认 300 及覆盖 / 未传 contentType 时命令不含该字段 / 签名异常包装 `ObjectStoreError` 保留 cause），全量 170 用例全绿
+- 消费侧：yunzone_user_center `scripts/smoke-oss.mjs` 扩展 PUT 签名实测（主用例直写 → exists → getSignedUrl 可读 / Content-Type 行为记录 / 时效过期 403），阿里云 OSS 验证通过；宿主 `StorageProvider` 透传与头像直写 API 待后续落地，见 CouplingRecord
+
 ## 0.14.0 — 2026-08-24
 
 `/storage` S3 兼容适配器可配置化改造：支持阿里云 OSS 等要求 virtual-hosted 寻址与地域签名的 S3 兼容服务。

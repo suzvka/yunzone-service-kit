@@ -22,6 +22,7 @@ export type {
   StorageChannel,
   ObjectStoreConfig,
   UploadParams,
+  GetUploadUrlOptions,
   ObjectStore,
 } from "./types";
 export type { ResolvedStorageConfig } from "../config/storage";

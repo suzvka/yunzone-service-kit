@@ -4,6 +4,7 @@
  * 实现 ObjectStore 契约：
  * - upload 直传 PutObjectCommand（key 即 fileName，不做隐式改名）
  * - getSignedUrl 用 SDK presigner 生成签名 URL（禁止自行拼接）
+ * - getUploadUrl 用同一 presigner 生成上传（PUT）签名 URL（客户端直写）
  * - delete / exists 对应 DeleteObjectCommand / HeadObjectCommand
  * - 错误归一化：底层 SDK 错误包装为 ObjectStoreError
  *
@@ -21,7 +22,7 @@ import {
 import { getSignedUrl as awsGetSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { ResolvedStorageConfig } from "../config/storage";
 import { ObjectStoreError } from "./errors";
-import type { ObjectStore, UploadParams } from "./types";
+import type { ObjectStore, GetUploadUrlOptions, UploadParams } from "./types";
 
 /** S3ObjectStore 构造选项 */
 export interface S3ObjectStoreOptions {
@@ -93,6 +94,23 @@ export class S3ObjectStore implements ObjectStore {
       );
     } catch (err) {
       throw new ObjectStoreError("对象存储签名 URL 生成失败", { cause: err });
+    }
+  }
+
+  async getUploadUrl(options: GetUploadUrlOptions): Promise<string> {
+    try {
+      return await awsGetSignedUrl(
+        this.client,
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: options.key,
+          ...(options.contentType ? { ContentType: options.contentType } : {}),
+        }),
+        // 写签名默认 300s：泄露代价高于读签名，独立安全默认（有意不走 defaultExpireSeconds）
+        { expiresIn: options.expireSeconds ?? 300 }
+      );
+    } catch (err) {
+      throw new ObjectStoreError("对象存储上传签名 URL 生成失败", { cause: err });
     }
   }
 
