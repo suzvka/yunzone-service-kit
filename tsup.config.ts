@@ -11,6 +11,7 @@ export default defineConfig({
     "src/ops/index.ts",
     "src/ops/next.ts",
     "src/app/index.ts",
+    "src/app/next.ts",
   ],
   format: ["esm", "cjs"],
   dts: true,

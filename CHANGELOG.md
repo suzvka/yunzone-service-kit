@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.17.0 — 2026-08-24
+
+`/app` 新增标准端点托管（新导出子路径 `yunzone-service-kit/app/next`）：子产品把 manifest 托管到约定路径 `/.well-known/app-manifest.json`，消费方（如用户中心）按该路径拉取，URL 约定随契约稳定演进。
+
+- **`createAppManifestHandler(options)` 路由适配层**（对齐 `/ops/next` 鸭子类型 + 宽松泛型策略，规避 Next.js 内部私有标记跨副本类型不兼容）：`options.manifest` 支持静态对象或函数形态（每次请求求值，支持运行时动态状态）；每次请求经 `parseAppManifest` 契约校验，非法 manifest 返回 `500 { code: "APP_MANIFEST_INVALID" }`（不输出非法契约、不泄漏诊断细节）；成功响应统一 `Cache-Control: public, max-age=300` 与 JSON Content-Type；与静态文件方式（`public/.well-known/app-manifest.json`）二选一，完全静态场景零代码
+- **路径约定常量 `APP_MANIFEST_WELL_KNOWN_PATH = "/.well-known/app-manifest.json"`**（RFC 8615 well-known 前缀）：加入 `app/types.ts` 与 `docs/app-manifest.md`「标准端点约定」章节
+- 配套：`tests/app-next.test.ts` 新增 4 用例（静态 200 + 缓存头 / 函数式动态 status / 非法 500 固定错误码且不泄漏诊断 / 常量路径），全量 192 用例全绿；tsup entry 与 package.json exports 新增 `./app/next` 子路径
+- 消费侧：WanyanAI 接入标准端点（`src/app/.well-known/app-manifest.json/route.ts` + kit ^0.17.0），用户中心 `app_source` 表 manifest_url 指向该路径（见用户中心 CouplingRecord）
+
 ## 0.16.0 — 2026-08-24
 
 新增 `/app` 应用目录契约模块（新导出子路径 `yunzone-service-kit/app`）：为集群子产品提供标准「应用介绍」自描述契约（Headless 纯数据层，零框架 / 零 React 依赖），宿主（如用户中心）聚合后标准渲染、随意编排。

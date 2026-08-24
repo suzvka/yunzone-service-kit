@@ -151,7 +151,29 @@ const apps = resolveAppCatalog([
 
 ---
 
-## 5. 版本策略
+## 5. 标准端点约定
+
+子产品在标准路径暴露 manifest，消费方（如用户中心）按该路径拉取：
+
+```
+https://<子产品域名>/.well-known/app-manifest.json
+```
+
+- **路径**：`/.well-known/app-manifest.json`（RFC 8615 well-known 前缀；常量 `APP_MANIFEST_WELL_KNOWN_PATH`）
+- **托管方式二选一**：
+  - **kit 托管**（推荐，一行接入）：`createAppManifestHandler`（`yunzone-service-kit/app/next`）——每次请求契约校验（非法 manifest 返回 500 `APP_MANIFEST_INVALID`）、统一响应头（`Cache-Control: public, max-age=300`）；支持函数式 manifest（运行时动态状态）
+    ```ts
+    // src/app/.well-known/app-manifest.json/route.ts
+    import { createAppManifestHandler } from "yunzone-service-kit/app/next";
+    import manifest from "@/manifest/app-manifest.json";
+    export const GET = createAppManifestHandler({ manifest });
+    ```
+  - **静态文件**：manifest 完全静态时直接放置 `public/.well-known/app-manifest.json`（Next.js 静态托管，零代码）
+- 消费方拉取示例：`https://wanyan.coze.site/.well-known/app-manifest.json`
+
+---
+
+## 6. 版本策略
 
 - 契约版本经 `schemaVersion` 显式声明；当前仅支持 `"1.0"`。
 - 新增字段只允许为可选字段，且不得改变既有字段的类型与语义（向前兼容，与 Token Authority 契约同规）。

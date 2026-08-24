@@ -16,6 +16,14 @@
 /** 当前支持的契约版本（schemaVersion 仅接受该值，其余抛错） */
 export const APP_MANIFEST_SCHEMA_VERSION = "1.0" as const;
 
+/**
+ * 标准端点路径约定（RFC 8615 well-known 前缀）
+ *
+ * 子产品在此路径暴露 manifest（kit 托管或静态文件二选一），
+ * 消费方（如用户中心）按该路径拉取；URL 约定随契约稳定演进。
+ */
+export const APP_MANIFEST_WELL_KNOWN_PATH = "/.well-known/app-manifest.json";
+
 /** 应用状态：驱动宿主卡片按钮文案与可交互性 */
 export type AppManifestStatus =
   | "live"
