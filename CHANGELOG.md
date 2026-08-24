@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.16.0 — 2026-08-24
+
+新增 `/app` 应用目录契约模块（新导出子路径 `yunzone-service-kit/app`）：为集群子产品提供标准「应用介绍」自描述契约（Headless 纯数据层，零框架 / 零 React 依赖），宿主（如用户中心）聚合后标准渲染、随意编排。
+
+- **`AppManifest` v1 契约（zod schema `appManifestSchema`）**：`schemaVersion`（当前仅支持 `"1.0"`，其余抛错 `APP_MANIFEST_VERSION_UNSUPPORTED`）/ `app.id`（唯一标识）/ `name`（应用名）/ `tagline?`（一句话简介，缺省回退 `description`）/ `description`（详细介绍）/ `href`（访问链接）/ `status?`（`live` / `beta` / `coming_soon` / `maintenance`，缺省 `live`）/ `assets.icon`（必填，标准方块按钮用）+ `cover?` / `banner?`（封面图 / 背景图，应用主页用）/ `tags?`（缺省 `[]`）/ `links?`（`docs` / `source` / `support`，全部可选）——字段集为用户中心既有 `Service` 类型的**超集**（新增 tagline / cover / banner / links / schemaVersion），既有 ServiceCard 可直接消费 `ResolvedApp`
+- **`parseAppManifest(input, source?)` 解析器**：校验 + 默认值归一化（`status` → `live`、`tags` → `[]`）；失败抛 `AppManifestError`（code `APP_MANIFEST_INVALID`，message 含 zod 字段路径诊断，`source` 如文件名 / URL 前置标注）；`schemaVersion` 不支持显式抛错，禁止静默降级
+- **`resolveAppCatalog(entries, options?)` 目录聚合纯函数（Headless 数据层核心）**：输入 `AppCatalogEntry[]`（`manifest` 可为已解析对象或 JSON 字符串）+ 本地编排覆盖（`name` / `status` 覆盖 manifest 声明、`order` 排序、`hidden` 隐藏标志），输出标准卡片数据 `ResolvedApp[]`（`tagline` 回退 `description`、`links` 缺省字段归一化为 `undefined`、有 `order` 数值升序在前、无 `order` 按 `id` localeCompare 稳定排后）；重复 `id` 抛错（`APP_CATALOG_DUPLICATE_ID`，fail-fast，防止编排配置错误）；`{ skipInvalid: true }` 时解析失败 `console.warn` 跳过（默认抛错，构建期友好）；纯同步、无副作用、幂等
+- **错误族**：`AppManifestError`（extends `KitError`，复用 core 基类；错误码值域 `APP_MANIFEST_INVALID` / `APP_MANIFEST_VERSION_UNSUPPORTED` / `APP_CATALOG_DUPLICATE_ID`）
+- 配套：`tests/app.test.ts` 新增 18 用例（契约解析全字段 / 缺省归一化 / 非法输入诊断含路径 / 版本不支持 / source 标注 / 单条聚合 / 编排覆盖 / 排序 / hidden / JSON 字符串输入 / fail-fast / skipInvalid / 重复 id / 幂等 / 版本常量），全量 188 用例全绿；`docs/app-manifest.md` 契约文档（设计动机 / 字段明细 / 示例 / API 用法 / 错误码 / 版本策略）；`src/index.ts` 入口注释、package.json exports 与 description 新增 `/app`
+- 后续规划：插件式注册中心（manifest 拉取 / 健康检查）与用户中心 / WanyanAI 消费方落地（标准渲染、应用主页、编排）另行排期
+
 ## 0.15.0 — 2026-08-24
 
 `/storage` 契约新增「上传预签名 URL（PUT，客户端直写）」能力：`ObjectStore.getUploadUrl(options)`。
