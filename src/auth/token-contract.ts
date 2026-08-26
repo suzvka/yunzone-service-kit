@@ -1,7 +1,8 @@
 /**
  * Token Authority Service 契约（服务凭证 / 用户 Token 共享端点）
  *
- * 单一事实源：docs/token-contract.md（共识版 v1.1）。
+ * 单一事实源：docs/token-contract.md（共识版 v1.4，含 accountId 账户锚定
+ * 与身份票据 identityTicket / 链式证据 evidenceToken 契约）。
  * 消费方（用户中心 / WanyanAI）按本模块类型对接鉴权中心 /api/v1/token/*，
  * 字段命名与鉴权中心实现一致（camelCase）。
  */
@@ -56,10 +57,22 @@ export interface TokenIssueRequest {
   ttl?: number;
   /** 可公开的自定义声明（匿名 introspect 返回） */
   publicClaims?: Record<string, unknown>;
-  /** userId 是否可公开（默认 false = 最小暴露） */
+  /** userId 是否可公开（默认 false = 最小暴露；v1.4 起业务用户 token 的账户锚点走 publicClaims.accountId，不再依赖本开关） */
   publicUserId?: boolean;
   /** scope 是否可公开（默认 true，授权判断需要） */
   publicScope?: boolean;
+  /**
+   * v1.4 — 身份票据：第三方产品签发业务用户 token（claims 无 type 声明）时的账户锚定凭据。
+   * 平台（user_center）签发，格式 `yzid1.<payload>.<sig>`，短时有效（默认 300s）。
+   * 仅当调用方为第三方产品且签发业务用户 token 时必填（与 evidenceToken 二选一）。
+   */
+  identityTicket?: string;
+  /**
+   * v1.4 — 链式证据：同一产品现存有效业务用户 token（会员换发等续签场景）。
+   * 鉴权中心校验其 active + 同 productId + 业务类型后，以其 accountId 为锚。
+   * 与 identityTicket 二选一。
+   */
+  evidenceToken?: string;
 }
 
 export interface TokenIssueResponse {
