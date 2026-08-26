@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18.0 — 2026-08-26
+
+`/auth` Token Authority 服务契约升级至 v1.4：新增「accountId 账户锚定」与「身份票据」契约，支撑跨产品积分扣款锚定与第三方产品安全接入。
+
+- **`TokenIssueRequest` 新增 `identityTicket?` 字段**：第三方产品签发业务用户 token（claims 无 type 声明）时，必须携带平台（user_center）签发的短时身份票据（格式 `yzid1.<payload>.<sig>`，默认 300s 有效），证明账户归属经平台 OAuth 流程背书；与 `evidenceToken` 二选一
+- **`TokenIssueRequest` 新增 `evidenceToken?` 字段**：同一产品现存有效业务用户 token 作为链式证据（会员换发等续签场景），鉴权中心校验 active + 同 productId + 业务类型后以其 accountId 为锚；与 `identityTicket` 二选一
+- **`publicUserId` JSDoc 更新**：v1.4 起业务用户 token 的账户锚点走 `publicClaims.accountId`，不再依赖本开关
+- 配套：`docs/token-contract.md` 同步升级至 v1.4（新增 §3.5 业务用户 token 与 accountId / §3.6 身份票据契约；修订记录追加 4 条决策；安全边界与签发约束补充 3 条）；模块头注释同步 v1.4
+- 消费侧影响：yunzone_auth 鉴权中心需实现 accountId 强制注入 + 票据验签逻辑；relay 等消费方可通过匿名 introspect 的 `publicClaims.accountId` 解析账户锚点；既有消费方零破坏（纯增量可选字段）
+
 ## 0.17.0 — 2026-08-24
 
 `/app` 新增标准端点托管（新导出子路径 `yunzone-service-kit/app/next`）：子产品把 manifest 托管到约定路径 `/.well-known/app-manifest.json`，消费方（如用户中心）按该路径拉取，URL 约定随契约稳定演进。
