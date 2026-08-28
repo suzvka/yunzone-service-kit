@@ -29,7 +29,7 @@ function fullManifest(): AppManifest {
       },
       tags: ["开源框架", "可定制"],
       links: {
-        docs: "https://wanyan.coze.site/docs",
+        docs: "https://docs.example.com/wanyanai",
         source: "https://github.com/example/wanyanai",
       },
     },
@@ -68,7 +68,7 @@ describe("parseAppManifest", () => {
     });
     expect(manifest.app.tags).toEqual(["开源框架", "可定制"]);
     expect(manifest.app.links).toEqual({
-      docs: "https://wanyan.coze.site/docs",
+      docs: "https://docs.example.com/wanyanai",
       source: "https://github.com/example/wanyanai",
       support: undefined,
     });
@@ -163,7 +163,7 @@ describe("resolveAppCatalog", () => {
     expect(app.status).toBe("live");
     expect(app.assets.icon).toBe("/icons/wanyanai.png");
     expect(app.tags).toEqual(["开源框架", "可定制"]);
-    expect(app.links.docs).toBe("https://wanyan.coze.site/docs");
+    expect(app.links.docs).toBe("https://docs.example.com/wanyanai");
     expect(app.links.support).toBeUndefined();
     expect(app.order).toBeUndefined();
     expect(app.hidden).toBe(false);

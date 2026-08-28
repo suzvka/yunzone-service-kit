@@ -69,6 +69,8 @@
 
 ## 3. 示例 manifest
 
+线上实例（即 `https://wanyan.coze.site/.well-known/app-manifest.json` 的实际返回）：
+
 ```json
 {
   "schemaVersion": "1.0",
@@ -76,22 +78,18 @@
     "id": "wanyanai",
     "name": "WanyanAI",
     "tagline": "AI 驱动的文本诊断专家",
-    "description": "插件化智能文本分析平台，框架开源，功能插件支持按需定制。",
+    "description": "插件化智能文本分析平台。框架开源，功能插件支持按需定制。",
     "href": "https://wanyan.coze.site",
     "status": "live",
     "assets": {
-      "icon": "/icons/wanyanai.png",
-      "cover": "/covers/wanyanai.png",
-      "banner": "/banners/wanyanai.png"
+      "icon": "https://wanyan.coze.site/app-icon.png"
     },
-    "tags": ["开源框架", "可定制"],
-    "links": {
-      "docs": "https://wanyan.coze.site/docs",
-      "source": "https://github.com/suzvka/WanyanAI"
-    }
+    "tags": ["开源框架", "可定制"]
   }
 }
 ```
+
+该实例未使用可选的 `cover` / `banner` / `links`，解析后归一化为 `undefined`；标准方块卡片仅需 `icon`，`cover` / `banner` / `links` 供应用主页类消费方使用。
 
 ---
 
