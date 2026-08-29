@@ -15,6 +15,8 @@ export const TOKEN_ENDPOINTS = {
   lookup: '/api/v1/token/lookup',
   refresh: '/api/v1/token/refresh',
   revoke: '/api/v1/token/revoke',
+  /** 服务健康探活（GET） */
+  healthz: '/api/healthz',
 } as const;
 
 // ─── 错误 ──────────────────────────────────────────────────────────

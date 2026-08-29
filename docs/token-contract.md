@@ -51,7 +51,7 @@
 
 ## 1. 契约总览
 
-鉴权中心对外提供 5 个端点：
+鉴权中心对外提供 5 个端点，另有 1 个运维探活端点：
 
 | 端点 | 方法 | 请求 | 响应 |
 |---|---|---|---|
@@ -60,6 +60,7 @@
 | `/api/v1/token/lookup` | POST | `{ id }` | 校验响应（同 introspect） |
 | `/api/v1/token/refresh` | POST | `{ token, ttl? }` | `{ success, expiresAt }` |
 | `/api/v1/token/revoke` | POST | `{ token }` 或 `{ userId, productId }` | `{ success: true }` |
+| `/api/healthz`（运维探活） | GET | - | 2xx 即可用；消费方客户端执行层（kit `/auth` client）据此探活 |
 
 ---
 

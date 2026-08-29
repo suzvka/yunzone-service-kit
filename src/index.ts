@@ -8,7 +8,8 @@
  * - yunzone-service-kit/registry — 泛型 Provider 注册中心基座（并存 Provider 模式）
  * - yunzone-service-kit/config   — 运行时配置层（env facets / 数据库 URL / 存储凭证 / baseUrl）
  * - yunzone-service-kit/ops      — 运维数据接口（报告聚合 + 管理后台公共逻辑）
- * - yunzone-service-kit/auth     — Token Authority 服务契约（端点 / 请求 / 响应 / 错误码）
+ * - yunzone-service-kit/auth     — Token Authority 服务契约（端点 / 请求 / 响应 / 错误码）+ 客户端执行层
+ * - yunzone-service-kit/points   — 积分服务契约（余额 / 幂等实扣）+ 客户端执行层
  * - yunzone-service-kit/app      — 应用目录契约（AppManifest v1 + 目录聚合纯函数）
  */
 
@@ -18,5 +19,6 @@ export * from "./storage";
 export * from "./registry";
 export * from "./config";
 export * from "./ops";
-export * from "./auth/token-contract";
+export * from "./auth";
+export * from "./points";
 export * from "./app";
