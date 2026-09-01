@@ -40,6 +40,11 @@ export const authCenterFacet = z.object({
   AUTH_CENTER_URL: z.string().optional(),
   AUTH_CENTER_API_KEY: z.string().optional(),
   AUTH_CENTER_PRODUCT_ID: z.string().optional(),
+  /**
+   * 身份票据共享 HMAC 密钥（token-contract §3.6）：平台侧签发 / 鉴权中心本地验签，
+   * 两侧必须注入同一值；未配置时票据签发（503）与票据校验（500）均 fail-closed。
+   */
+  IDENTITY_TICKET_SECRET: z.string().optional(),
 });
 
 /** ── 用户中心面：仅服务端 URL；浏览器侧由服务端经运行时接口下发，不提供 NEXT_PUBLIC_ 内联通道 ── */

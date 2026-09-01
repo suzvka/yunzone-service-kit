@@ -1,13 +1,25 @@
-# Token Authority 服务契约（共识版 v1.4）
+# Token Authority 服务契约（共识版 v1.5）
 
-> 版本：v1.4（2026-08）
-> 来源：用户中心「服务凭证（Service Credential）证书契约需求单 v1.0」，经鉴权中心（yunzone_auth）与消费方（yunzone_user_center / WanyanAI）评审修订；v1.4 新增「accountId 账户锚定」与「身份票据」契约。
+> 版本：v1.5（2026-09）
+> 来源：用户中心「服务凭证（Service Credential）证书契约需求单 v1.0」，经鉴权中心（yunzone_auth）与消费方（yunzone_user_center / WanyanAI）评审修订；v1.4 新增「accountId 账户锚定」与「身份票据」契约；v1.5 结算 P1 事故（UC-TICKET-20260902-001）：平台指定注册数据化、签发校验加固、错误码语义化、商品契约去商业化。
 > 单一事实源：本文件 + [src/auth/token-contract.ts](../src/auth/token-contract.ts) 类型定义。
 > 适用范围：Token Authority Service（鉴权中心）与宿主应用之间的服务凭证签发 / 校验 / 续期 / 吊销接口契约。
 
 ---
 
-## 0. 修订记录（v1.0 → v1.4）
+## 0. 修订记录（v1.0 → v1.5）
+
+### v1.5
+
+| # | 修订点 | 决策 |
+|---|---|---|
+| 19 | 平台指定注册数据化 | 平台产品（账户权威）豁免资格改由**产品注册记录 `claims.isPlatform` 标记**指认（admin 授予/撤销，单一事实源）；环境变量 `PLATFORM_PRODUCT_ID` 仅作回退；**删除 `'user-center'` 硬编码默认值**——无显式指定 = 无豁免 |
+| 20 | `claims.type` 白名单 | issue 仅接受 无 type（业务用户）/ `client-credential` / `sku`；未知值（含拼写偏差）一律 400，杜绝绕过锚定与严格校验的旁路 |
+| 21 | 保留命名空间防护 | `userId` 命中 `client:` / `sku:` / `product:` 前缀必须与对应类型匹配；`product:` 仅 admin 通道可写 |
+| 22 | 跨类型替换保护 | replace 语义仅允许同类型覆盖；目标现存异类型 active 行时签发返回 409 `TOKEN_CONFLICT`（防探测式签发误删真实凭证行） |
+| 23 | 票据缺失错误码语义 | 第三方产品缺 `identityTicket` / `evidenceToken` 的拒绝由 400 `INVALID_ARGUMENT` 改为 **412 `IDENTITY_TICKET_REQUIRED`**（策略拒绝，响应附票据端点适配指引） |
+| 24 | 商品契约去商业化 | 鉴权中心对 `claims.type='sku'` 仅保留结构性约束（`claims.skuId` 声明 + `userId = sku:{skuId}` 命名空间）；陈列/计价等**内容字段的语义校验退出基建**，由消费方（下单快照等读取路径）在自身边界校验 |
+| 25 | 票据密钥契约化 | `IDENTITY_TICKET_SECRET` 纳入集群契约面 `authCenterFacet`（两侧同值注入；未配置时签发 503 / 校验 500，均 fail-closed） |
 
 ### v1.4
 
@@ -57,7 +69,7 @@
 |---|---|---|---|
 | `/api/v1/token/issue` | POST | 签发请求（见 3.3） | 签发响应（含一次性 `token`，即 secret） |
 | `/api/v1/token/introspect` | POST | `{ token, scope? }` | 校验响应（见 3.1 / 3.2） |
-| `/api/v1/token/lookup` | POST | `{ id }` | 校验响应（同 introspect） |
+| `/api/v1/token/lookup` | POST | `{ id }` 或 `{ productId, skuId }` | 公开视图 / `{ active: false }`（同匿名 introspect 权） |
 | `/api/v1/token/refresh` | POST | `{ token, ttl? }` | `{ success, expiresAt }` |
 | `/api/v1/token/revoke` | POST | `{ token }` 或 `{ userId, productId }` | `{ success: true }` |
 | `/api/healthz`（运维探活） | GET | - | 2xx 即可用；消费方客户端执行层（kit `/auth` client）据此探活 |
@@ -111,41 +123,43 @@
 
 | 字段 | 约束 | 说明 |
 |---|---|---|
-| `userId` | **必填** | 签发主体；服务凭证模式传 `client:{productId}`（replace 语义键） |
+| `userId` | **必填** | 签发主体；服务凭证模式传 `client:{productId}`（replace 语义键）；保留命名空间 `client:` / `sku:` / `product:` 必须与对应类型匹配（v1.5 #21） |
 | `productId` | **必填**，禁止默认值兜底 | 缺失或为空返回 400 `INVALID_ARGUMENT` |
-| `claims.type` | 服务凭证模式必填 `"client-credential"` | 由调用方声明，鉴权中心校验 |
+| `claims.type` | 白名单：不填（业务用户）/ `"client-credential"` / `"sku"` | 未知值一律 400（v1.5 #20）；服务凭证/商品模式触发各自的严格校验 |
 | `claims.name` | 服务凭证模式必填 | 非空字符串，缺失不降级签发 |
 | `claims.confidential` | 服务凭证模式必填 | 布尔值 |
 | `claims.redirectUris` | 服务凭证模式必填 | 1~10 个合法 URL，缺失/为空返回 400 `INVALID_ARGUMENT` |
 | `claims.clientUri` | 可选 | 按需传入（URL 格式校验） |
-| `claims` 扁平约束 | 服务凭证模式强制 | 除 `redirectUris` 外，禁止嵌套对象 / 数组（各语言消费方解析无歧义） |
+| `claims.skuId` | 商品模式必填 | 稳定公开标识（≤64 字符），`userId` 强制 `sku:{skuId}`；内容字段不做基建级校验（v1.5 #24） |
+| `claims` 扁平约束 | 服务凭证模式强制 | 除 `redirectUris` / `callbackUrls` 外，禁止嵌套对象 / 数组（各语言消费方解析无歧义） |
+| `identityTicket` / `evidenceToken` | 第三方产品签发业务用户 token 二选一必填 | 账户锚定凭据（§3.5 / §3.6）；缺失返回 412 `IDENTITY_TICKET_REQUIRED`（v1.5 #23） |
 | `ttl` | 可选 | 有效秒数；**不填 = 永不过期**（响应 `expiresAt: null`），鉴权中心不评判调用方的过期时间设置 |
 
-> 服务凭证模式的严格校验由鉴权中心在 issue 端点强制（`claims.type === "client-credential"` 时），普通用户 token 签发的 claims 保持自由。
+> 服务凭证模式的严格校验由鉴权中心在 issue 端点强制（`claims.type === "client-credential"` 时），业务用户 token 签发的 claims 保持自由（账户锚定除外）。
+> replace 语义仅同类型覆盖：目标现存异类型 active 行时返回 409 `TOKEN_CONFLICT`（v1.5 #22）。
 
 ### 3.4 续期 / 吊销
 
 - `refresh`：返回 `{ success, expiresAt }`，**令牌值不变，仅延长过期时间**；调用方描述 `ttl` 则按 `ttl` 续期（`expiresAt` 为新过期时间），**不填 `ttl` = 永不过期**（`expiresAt: null`）。无 TTL 硬上限（v1.3 起移除）。
 - `revoke`：吊销后凭证立即失效；**幂等语义**——重复吊销已吊销凭证返回 `{ success: true }`（对不存在的 token 返回 404 `TOKEN_NOT_FOUND`）。按 token 吊销时 `productId` 可省略（服务端从记录推导归属产品做隔离校验）。
 
-### 3.5 业务用户 token 与 accountId（v1.4）
+### 3.5 业务用户 token 与 accountId（v1.4；v1.5 修订指定方式与拒绝码）
 
-- **判定**：请求体 `claims.type` 未声明（即非 `client-credential` / `oauth_client` / `client_credentials` / `product` 等机器类型）的签发即业务用户 token 签发。
+- **判定**：请求体 `claims.type` 未声明的签发即业务用户 token 签发（v1.5 起 `claims.type` 为白名单机制，未知值直接 400，不再存在"其它机器类型"旁路）。
 - **accountId**：平台统一账户 id，值空间 = user_center OAuth `sub` = `point_account.user_id`（同一账户空间，消费方直接用作积分账本主键）。
 - **服务端强制注入**：签发成功时服务端将 `claims.accountId`、`publicClaims.accountId` 统一写为账户 id（覆盖调用方传入值），并强制 `userId === accountId`（不一致返回 400 `INVALID_ARGUMENT`）。
-- **公开可解析**：`publicClaims.accountId` 使匿名 introspect 亦能解析账户锚点（relay 计费管线依赖），与 name/email 等 PII 完全分离（PII 仅存私有 claims）。
+- **公开可解析**：`publicClaims.accountId` 使匿名 introspect 亦能解析账户锚点（跨产品计费锚定所必需），与 name/email 等 PII 完全分离（PII 仅存私有 claims）。
 - **强制锚定规则**（按调用方凭证判定）：
-  - 平台产品（调用凭证归属 `PLATFORM_PRODUCT_ID`，默认 `user-center`）签发业务用户 token：免票据，accountId 以调用方可信 `userId` 为准（平台 OAuth 流程背书）；
-  - 第三方产品签发：必须携带 **`identityTicket`**（§3.6）或 **`evidenceToken`**（同产品现存有效业务用户 token，链式换发）；缺失 / 无效 / 过期 / 归属不符 → 400 `INVALID_ARGUMENT` 或 403 `PRODUCT_NOT_ALLOWED`；
-  - 无有效调用凭证（原型降级）：维持现状放行（仅限未配置凭证的开发形态，生产必须配置平台凭证）。
+  - 平台产品签发业务用户 token：免票据，accountId 以调用方可信 `userId` 为准（平台 OAuth 流程背书）。**平台资格指定**（v1.5 #19）：产品注册记录 `claims.isPlatform = true`（admin 授予，单一事实源）；无标记时回退环境变量 `PLATFORM_PRODUCT_ID` 比对；两者都未指定 = 无豁免；
+  - 第三方产品签发：必须携带 **`identityTicket`**（§3.6）或 **`evidenceToken`**（同产品现存有效业务用户 token，链式换发）；缺失 → **412 `IDENTITY_TICKET_REQUIRED`**（v1.5 #23）；票据无效/过期 → 400；证据归属不符 → 403 `PRODUCT_NOT_ALLOWED`。
 
 ### 3.6 身份票据（identityTicket）契约（v1.4）
 
 - **签发方**：user_center（平台账户权威）。端点 `POST /api/v1/identity/ticket`，携带用户 OAuth access token（Bearer），校验通过后返回 `{ accountId, ticket, expiresIn }`。
-- **票据格式**：`yzid1.<base64url(payload)>.<base64url(hmac-sha256)>`；payload = `{ v:1, a:accountId, i:签发秒, e:过期秒 }`；HMAC 密钥 = 共享环境变量 `IDENTITY_TICKET_SECRET`（user_center 与鉴权中心各持一份，部署时注入）。
+- **票据格式**：`yzid1.<base64url(payload)>.<base64url(hmac-sha256)>`；payload = `{ v:1, a:accountId, i:签发秒, e:过期秒 }`；HMAC 密钥 = 共享环境变量 `IDENTITY_TICKET_SECRET`（v1.5 #25 起纳入集群契约面 `authCenterFacet`，平台侧与鉴权中心各持一份且必须同值，部署时注入）。
 - **有效期**：默认 300 秒（短时效，防重放面收窄）。
-- **消费方**：第三方产品在**用户 OAuth 授权完成后、签发业务用户 token 时**向鉴权中心提交；鉴权中心本地验签（无需回调 user_center）。
-- **链式证据 `evidenceToken`**：同一产品现有有效业务用户 token（如会员换发场景），鉴权中心校验其 active + 同 productId + 业务类型 + 从 `publicClaims.accountId ?? claims.accountId ?? userId` 提取账户 id 后作锚；适用于「同一用户、无需重新授权」的续签路径。
+- **消费方**：第三方产品在**用户 OAuth 授权完成后、签发业务用户 token 时**向鉴权中心提交；鉴权中心本地验签（无需回调平台）。
+- **链式证据 `evidenceToken`**：同一产品现有有效业务用户 token（续签/换发场景），鉴权中心校验其 active + 同 productId + 业务类型 + 从 `publicClaims.accountId ?? claims.accountId ?? userId` 提取账户 id 后作锚；适用于「同一用户、无需重新授权」的续签路径。
 - **安全边界**：票据与证据均只证明「该账户确实被平台/OAuth 流程背书」，不承载任何金额语义；扣款上限、授权票（escrow）属于积分域另行设计。
 
 ---
@@ -156,12 +170,14 @@
 
 | HTTP | code | 场景 |
 |---|---|---|
-| 400 | `INVALID_ARGUMENT` | 缺少必填字段、字段格式错误、claims 违反扁平约束 |
+| 400 | `INVALID_ARGUMENT` | 缺少必填字段、字段格式错误、claims 违反扁平约束、未知 `claims.type`、票据无效/过期 |
 | 401 | `UNAUTHENTICATED` | 调用方凭证无效或缺失 |
 | 403 | `PRODUCT_NOT_ALLOWED` | 真实凭证调用方越权操作其他产品 |
 | 404 | `TOKEN_NOT_FOUND` | refresh / revoke 目标 token 不存在 |
+| 409 | `TOKEN_CONFLICT` | 并发双签发唯一冲突；跨类型替换被拒（v1.5 #22） |
+| 412 | `IDENTITY_TICKET_REQUIRED` | 第三方产品签发业务用户 token 缺 `identityTicket` / `evidenceToken`（策略拒绝，v1.5 #23） |
 | 429 | `RATE_LIMITED` | 请求频率超限（响应含 `Retry-After`） |
-| 502 | `INTERNAL` | 内部服务错误 |
+| 500 | `INTERNAL` | 内部服务错误（含 `IDENTITY_TICKET_SECRET` 未配置时票据校验不可用） |
 
 > introspect / lookup 不参与上述错误码（防枚举，统一 200 + `{active:false}`）。
 
@@ -187,8 +203,9 @@
 4. `refresh` 按调用方 `ttl` 续期（不填 = 永不过期，`expiresAt: null`）；`revoke` 幂等。
 5. 错误响应符合第 4 节统一格式；无效 token 的 introspect / lookup 符合防枚举条款。
 6. 业务用户 token 签发后：`claims.accountId === publicClaims.accountId === userId`，且匿名 introspect 的 `claims.accountId` 可解析。
-7. 第三方产品签发业务用户 token 未携带有效 `identityTicket` / `evidenceToken` 时返回 400 `INVALID_ARGUMENT`；携带他人账户票据 / 证据时拒绝签发。
+7. 第三方产品签发业务用户 token 未携带有效 `identityTicket` / `evidenceToken` 时返回 412 `IDENTITY_TICKET_REQUIRED`；携带他人账户票据 / 证据时拒绝签发。
 8. 服务凭证模式（`claims.type='client-credential'`）签发强制 `userId = client:{productId}`，违反返回 400。
+9. 平台指定（v1.5）：`claims.isPlatform=true` 的产品签发业务用户 token 免票据；撤销标记后恢复票据约束；未知 `claims.type`、保留命名空间错配、跨类型替换分别返回 400 / 400 / 409。
 
 ---
 
@@ -197,3 +214,5 @@
 | 配置 | 默认 | 语义 |
 |---|---|---|
 | `ISSUER_ID` | `token-authority` | 签发方 / 环境标识，写入凭证公开 claims（可选字段） |
+| `PLATFORM_PRODUCT_ID` | 无 | 平台产品回退指定（首选产品注册记录 `claims.isPlatform`；均未指定 = 无豁免，v1.5 #19） |
+| `IDENTITY_TICKET_SECRET` | 无 | 身份票据共享 HMAC 密钥（与平台侧同值；未配置时票据链路 fail-closed，v1.5 #25） |
