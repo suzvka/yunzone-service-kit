@@ -175,7 +175,6 @@ describe("facetKeys", () => {
       "AUTH_CENTER_API_KEY",
       "AUTH_CENTER_PRODUCT_ID",
       "AUTH_CENTER_URL",
-      "IDENTITY_TICKET_SECRET",
     ]);
   });
 });

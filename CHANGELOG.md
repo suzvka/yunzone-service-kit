@@ -2,6 +2,16 @@
 
 > **记录边界**：本日志只记录 kit 自身的契约 / 实现 / 兼容性变更。消费方（下游服务）的内部迁移细节、文件清单、依赖版本对齐一律不记——那是反向依赖：下游一改，本日志立刻变成错误信息源。需要表述下游影响时，只以「兼容性 / 升级提示」的中立形式写 kit 侧的行为约束，必要时点名**角色**（鉴权中心、用户中心、宿主应用）而不点名具体仓库。
 
+## 0.21.0 — 2026-09-02
+
+`/auth` Token Authority 契约文档升级至 v1.6（登记表去账户化）；`/config` 契约面移除身份票据密钥。鉴权中心还原为纯 token 存储，业务用户 token 不再做 accountId 账户锚定，账户背书与支付风控归消费方与积分域。
+
+- **`docs/token-contract.md` v1.5 → v1.6**：新增修订 #26~#28——业务用户 token 签发改为登记表纯存储（不注入 / 不校验 accountId，accountId 由调用方自报进 `publicClaims.accountId`）；移除 `identityTicket` / `evidenceToken` 签发字段、`isPlatform` 平台指定、412 `IDENTITY_TICKET_REQUIRED` 错误码；§3.5 重写、§3.6 身份票据契约整体退役；错误表 / 安全约束 / 验收标准 / 配置项表同步
+- **`TokenIssueRequest` 移除 `identityTicket?` / `evidenceToken?` 字段**：账户锚定不再是登记表职责。**破坏性**：v1.4/v1.5 依赖票据签发的调用方需改为自报 `publicClaims.accountId`
+- **`authCenterFacet` 移除 `IDENTITY_TICKET_SECRET`**：身份票据机制退役，集群契约面不再持有该密钥。**破坏性**：升级后消费方私有 schema 若仍声明该键应一并删除
+- 配套：`tests/specs.test.ts` facetKeys 断言同步移除该键
+- **兼容性**：含破坏性变更（移除签发字段与契约面键）——与鉴权中心去账户化、消费方 accountId 自报为同一批协同上线
+
 ## 0.20.0 — 2026-09-02
 
 `/config` 契约面补齐身份票据密钥；`/auth` Token Authority 契约文档升级至 v1.5（结算账户锚定 P1：平台指定注册数据化、签发校验加固、错误码语义化、商品契约去商业化）。
