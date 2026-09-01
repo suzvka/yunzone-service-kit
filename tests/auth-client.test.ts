@@ -26,7 +26,7 @@ afterEach(() => {
 describe('createAuthCenterClient.introspect', () => {
   it('POST 到契约端点，携带 Bearer 头与 JSON body，透传响应', async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse({ active: true, productId: 'prod-1', userId: 'u-1', claims: { accountId: 'acct-1' } }),
+      jsonResponse({ active: true, productId: 'prod-1', tag: 'u-1', claims: { accountId: 'acct-1' } }),
     );
     vi.stubGlobal('fetch', fetchMock);
 

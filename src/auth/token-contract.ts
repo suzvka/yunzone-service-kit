@@ -47,8 +47,12 @@ export interface ApiErrorBody {
 // ─── Issue ─────────────────────────────────────────────────────────
 
 export interface TokenIssueRequest {
-  /** 签发主体；服务凭证模式内部约定为 `client:{productId}`（与业务用户空间隔离） */
-  userId: string;
+  /**
+   * 调用方自定义槽位标记（opaque）：登记表不解释语义，仅用作 replace 键位
+   * （同一 (productId, tag, claims.type) 至多一个 active Token）。消费方以自身身份语义
+   * 填充——用户中心填 userId，设备型产品填 deviceId；sku / client-credential 由服务端派生，调用方不传。
+   */
+  tag?: string;
   /** 凭证归属产品（业务侧唯一键，签发后不可变更） */
   productId: string;
   /** 权限域，默认空数组 */
@@ -57,10 +61,10 @@ export interface TokenIssueRequest {
   claims?: Record<string, unknown>;
   /** 有效秒数，默认 86400 */
   ttl?: number;
-  /** 可公开的自定义声明（匿名 introspect 返回） */
+  /** 可公开的自定义声明（匿名 introspect 返回）；账户锚点 accountId 由调用方自报于此 */
   publicClaims?: Record<string, unknown>;
-  /** userId 是否可公开（默认 false = 最小暴露）；账户锚点 accountId 由调用方自报进 publicClaims */
-  publicUserId?: boolean;
+  /** tag 是否可公开（默认 false = 最小暴露） */
+  publicTag?: boolean;
   /** scope 是否可公开（默认 true，授权判断需要） */
   publicScope?: boolean;
 }
@@ -69,7 +73,8 @@ export interface TokenIssueResponse {
   /** 凭证值（secret），仅本次签发响应返回一次 */
   token: string;
   expiresAt: string;
-  userId: string;
+  /** 槽位标记（opaque，回显签发时的 tag） */
+  tag: string;
   productId: string;
   scope: string[];
 }
@@ -107,8 +112,8 @@ export interface TokenPublicClaims {
 /**
  * 校验响应（introspect / lookup 共用）：
  * - 无效 token 统一 200 + { active: false }（防枚举）；
- * - 匿名 / 凭证产品不匹配 → 公开视图（含 productId）；
- * - 携带有效凭证且产品匹配 → 全量视图（含 userId）。
+ * - 匿名 / 凭证产品不匹配 → 公开视图（含 productId；tag 仅在 publicTag=true 时出现）；
+ * - 携带有效凭证且产品匹配 → 全量视图（含 tag）。
  */
 export interface TokenIntrospectResponse {
   active: boolean;
@@ -117,8 +122,8 @@ export interface TokenIntrospectResponse {
   scope?: string[];
   expiresAt?: string;
   claims?: TokenPublicClaims;
-  /** 签发主体，仅凭证调用（产品匹配）时返回 */
-  userId?: string;
+  /** 槽位标记（opaque）；全量视图返回，公开视图仅在 publicTag=true 时返回 */
+  tag?: string;
 }
 
 // ─── Refresh ───────────────────────────────────────────────────────
@@ -143,8 +148,8 @@ export interface TokenRefreshResponse {
 export interface TokenRevokeRequest {
   /** 按 token 值吊销单个 */
   token?: string;
-  /** 按 userId+productId 批量吊销 */
-  userId?: string;
+  /** 按 tag+productId 批量吊销该槽位下所有活跃业务用户 token */
+  tag?: string;
   /** 按 token 吊销时可省略（服务端从记录推导归属产品）；批量吊销必填 */
   productId?: string;
 }

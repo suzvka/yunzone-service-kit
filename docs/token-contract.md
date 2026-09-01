@@ -16,6 +16,7 @@
 | 26 | 登记表去账户化 | 鉴权中心还原为**纯 token 存储**：业务用户 token（claims 无 type）签发不再做 accountId 账户锚定、不注入 `claims.accountId`/`publicClaims.accountId`、不强制 `userId===accountId`；accountId 由调用方自报进 `publicClaims`，登记表只存不校验 |
 | 27 | 移除身份票据 / isPlatform 豁免 | 删除 `identityTicket`/`evidenceToken` 签发字段、`isPlatform` 平台指定、`PLATFORM_PRODUCT_ID`/`IDENTITY_TICKET_SECRET` 配置与 `IDENTITY_TICKET_REQUIRED`(412) 错误码——账户背书不再是登记表职责 |
 | 28 | 账户背书与支付风控归位 | 账户身份以平台 `userinfo.sub` 为准；支付风险（限额 / 速率 / 账户↔产品授权）由积分域风控在结算边界兜底，不在 token 签发层设限 |
+| 29 | 签发主体字段 `userId` → `tag` | v1 issue / introspect / revoke 的"签发主体"字段由 `userId` 更名为 **`tag`**（opaque 槽位标记，登记表不解释语义，仅用作 replace 键位）：业务用户 token 由调用方以自身身份语义填充（用户中心填 userId、设备型产品填 deviceId）；sku / client-credential 的 tag 由服务端派生（`sku:{skuId}` / `client:{productId}`），调用方不传。**API 变化隔离在基建边界——消费方在各自适配器内映射 userId↔tag，鉴权中心 API 只认 tag** |
 
 ### v1.5
 
@@ -79,7 +80,7 @@
 | `/api/v1/token/introspect` | POST | `{ token, scope? }` | 校验响应（见 3.1 / 3.2） |
 | `/api/v1/token/lookup` | POST | `{ id }` 或 `{ productId, skuId }` | 公开视图 / `{ active: false }`（同匿名 introspect 权） |
 | `/api/v1/token/refresh` | POST | `{ token, ttl? }` | `{ success, expiresAt }` |
-| `/api/v1/token/revoke` | POST | `{ token }` 或 `{ userId, productId }` | `{ success: true }` |
+| `/api/v1/token/revoke` | POST | `{ token }` 或 `{ tag, productId }` | `{ success: true }` |
 | `/api/healthz`（运维探活） | GET | - | 2xx 即可用；消费方客户端执行层（kit `/auth` client）据此探活 |
 
 ---
@@ -93,7 +94,7 @@
   - **公开 claims**：供消费方读取的结构化身份信息（只读视图，无就地修改端点）。
 - 凭证状态：`active`（有效）/ 已过期 / 已吊销。
 - 凭证类型由 `claims.type === "client-credential"` 标记（middleware 以此作为调用方凭证判据）。
-- 凭证的 userId 命名空间约定：服务凭证固定为 `client:{productId}`，与业务用户 token 空间隔离；同 productId 重签自动 replace 旧凭证（每产品至多一个活跃凭证）。
+- 凭证的槽位（tag）约定：服务凭证的 tag 由服务端派生为 `client:{productId}`，与业务用户 token 槽位空间隔离；同 productId 重签自动 replace 旧凭证（每产品至多一个活跃凭证）。
 - **业务用户 token**：claims 无 `type` 声明的 token 即业务用户 token。登记表对其**纯存储**——`claims`/`publicClaims` 原样落库，不注入、不校验 accountId。账户锚点 `accountId` 由调用方（产品）自报进 `publicClaims.accountId`，值空间 = 平台 `userinfo.sub` = `point_account.user_id`；账户背书与支付风控归消费方与积分域（详见 §3.5）。
 
 ---
@@ -108,7 +109,7 @@
 | `productId` | string | ✓ | 凭证归属的产品标识（公开视图亦返回；业务侧唯一键，签发后不可变更） |
 | `expiresAt` | string(ISO8601) | ✓ | 过期时间 |
 | `scope` | string[] | - | 权限域；未授予时为空数组 |
-| `userId` | string | - | 签发主体；仅「携带有效凭证且产品匹配」的全量视图返回（匿名不返回，最小暴露） |
+| `tag` | string | - | 槽位标记（opaque，即签发主体）；全量视图返回，公开视图仅在 `publicTag=true` 时返回（最小暴露） |
 
 > 防枚举：对不存在 / 已吊销 / 已过期的 token，introspect / lookup 统一返回 `200 + { active: false }`，不区分原因、不返回 404。
 
@@ -131,14 +132,14 @@
 
 | 字段 | 约束 | 说明 |
 |---|---|---|
-| `userId` | **必填** | 签发主体；服务凭证模式传 `client:{productId}`（replace 语义键）；保留命名空间 `client:` / `sku:` / `product:` 必须与对应类型匹配（v1.5 #21） |
+| `tag` | 业务用户可选、实体模式不传 | opaque 槽位标记（replace 语义键，登记表不解释语义）：业务用户 token 由调用方填充自身身份语义（用户中心填 userId）；sku / client-credential 的 tag 由服务端派生（`sku:{skuId}` / `client:{productId}`），调用方传入即 400 |
 | `productId` | **必填**，禁止默认值兜底 | 缺失或为空返回 400 `INVALID_ARGUMENT` |
 | `claims.type` | 白名单：不填（业务用户）/ `"client-credential"` / `"sku"` | 未知值一律 400（v1.5 #20）；服务凭证/商品模式触发各自的严格校验 |
 | `claims.name` | 服务凭证模式必填 | 非空字符串，缺失不降级签发 |
 | `claims.confidential` | 服务凭证模式必填 | 布尔值 |
 | `claims.redirectUris` | 服务凭证模式必填 | 1~10 个合法 URL，缺失/为空返回 400 `INVALID_ARGUMENT` |
 | `claims.clientUri` | 可选 | 按需传入（URL 格式校验） |
-| `claims.skuId` | 商品模式必填 | 稳定公开标识（≤64 字符），`userId` 强制 `sku:{skuId}`；内容字段不做基建级校验（v1.5 #24） |
+| `claims.skuId` | 商品模式必填 | 稳定公开标识（≤64 字符），tag 由服务端派生 `sku:{skuId}`；内容字段不做基建级校验（v1.5 #24） |
 | `claims` 扁平约束 | 服务凭证模式强制 | 除 `redirectUris` / `callbackUrls` 外，禁止嵌套对象 / 数组（各语言消费方解析无歧义） |
 | `publicClaims.accountId` | 业务用户 token 由调用方自报 | 账户锚点（跨产品扣款用）；登记表不校验、不注入，值应等于平台 `userinfo.sub` |
 | `ttl` | 可选 | 有效秒数；**不填 = 永不过期**（响应 `expiresAt: null`），鉴权中心不评判调用方的过期时间设置 |
@@ -194,13 +195,13 @@
 ## 6. 验收标准
 
 1. 对任意已签发凭证执行 `introspect` / `lookup`，响应均包含第 3.1、3.2 节全部必填字段，且值与签发时一致。
-2. 签发请求缺少 `productId`、`userId` 或服务凭证模式的 `claims.name` / `claims.confidential` 时返回 400 `INVALID_ARGUMENT`，不允许降级签发。
+2. 签发请求缺少 `productId` 或服务凭证模式的 `claims.name` / `claims.confidential` 时返回 400 `INVALID_ARGUMENT`，不允许降级签发。
 3. `token`（secret）仅出现在 `issue` 响应一次。
 4. `refresh` 按调用方 `ttl` 续期（不填 = 永不过期，`expiresAt: null`）；`revoke` 幂等。
 5. 错误响应符合第 4 节统一格式；无效 token 的 introspect / lookup 符合防枚举条款。
 6. 业务用户 token 签发后：`claims`/`publicClaims` 与调用方提交一致（登记表不注入 accountId）；调用方自报的 `publicClaims.accountId` 可经匿名 introspect 解析。
 7. 业务用户 token 签发不再要求 `identityTicket` / `evidenceToken`，不存在 412 `IDENTITY_TICKET_REQUIRED`；无 `isPlatform` 豁免概念。
-8. 服务凭证模式（`claims.type='client-credential'`）签发强制 `userId = client:{productId}`，违反返回 400。
+8. 服务凭证 / 商品模式的 tag 由服务端派生（`client:{productId}` / `sku:{skuId}`），调用方传入 tag 返回 400；业务用户 token 的 tag 由调用方自填（用户中心填 userId）。
 9. 未知 `claims.type`、保留命名空间错配、跨类型替换分别返回 400 / 400 / 409。
 
 ---

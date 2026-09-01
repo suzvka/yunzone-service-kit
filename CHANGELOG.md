@@ -8,6 +8,7 @@
 
 - **`docs/token-contract.md` v1.5 → v1.6**：新增修订 #26~#28——业务用户 token 签发改为登记表纯存储（不注入 / 不校验 accountId，accountId 由调用方自报进 `publicClaims.accountId`）；移除 `identityTicket` / `evidenceToken` 签发字段、`isPlatform` 平台指定、412 `IDENTITY_TICKET_REQUIRED` 错误码；§3.5 重写、§3.6 身份票据契约整体退役；错误表 / 安全约束 / 验收标准 / 配置项表同步
 - **`TokenIssueRequest` 移除 `identityTicket?` / `evidenceToken?` 字段**：账户锚定不再是登记表职责。**破坏性**：v1.4/v1.5 依赖票据签发的调用方需改为自报 `publicClaims.accountId`
+- **`/auth` 契约类型 `userId` → `tag`（破坏性）**：跟随鉴权中心 v1 API 的槽位模型，`TokenIssueRequest` / `TokenIssueResponse` / `TokenIntrospectResponse` / `TokenRevokeRequest` 的"签发主体"字段由 `userId` 更名为 `tag`（opaque 槽位，登记表不解释语义），`publicUserId` → `publicTag`；`docs/token-contract.md` §1/§2/§3.1/§3.3/§6 与修订 #29 同步。**升级提示**：API 变化隔离在消费方适配器边界——用户中心 / WanyanAI 适配器已映射 userId↔tag；直接用 kit `/auth` 类型读 `userId` 的消费方（如 relay introspect 的 accountId 兜底）升级后需改读 `tag`
 - **`authCenterFacet` 移除 `IDENTITY_TICKET_SECRET`**：身份票据机制退役，集群契约面不再持有该密钥。**破坏性**：升级后消费方私有 schema 若仍声明该键应一并删除
 - 配套：`tests/specs.test.ts` facetKeys 断言同步移除该键
 - **兼容性**：含破坏性变更（移除签发字段与契约面键）——与鉴权中心去账户化、消费方 accountId 自报为同一批协同上线
