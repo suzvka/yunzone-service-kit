@@ -67,11 +67,13 @@ signature  := base64url(HMAC-SHA256(secret, payloadStr))
 ### 2.7 路由守卫范式
 
 ```ts
-// 包装器范式：未登录 401，禁用态 503
-export function requireAdminAuth(handler: AdminRouteHandler): AdminRouteHandler
+// 包装器范式：未登录 401，禁用态 503；返回类型与入参 handler 相同
+export function requireAdminAuth<THandler>(handler: THandler): THandler
 ```
 
-**实现分层**：HMAC 会话函数（纯逻辑、零框架耦合）进 kit `ops/admin.ts`；`requireAdminAuth` 依赖 `NextRequest`/`NextResponse`，作为 Next.js 适配层放 kit 独立入口（`ops/next.ts`），**不得**混入纯逻辑层。
+**实现分层**：HMAC 会话函数（纯逻辑、零框架耦合）进 kit `ops/admin.ts`；`requireAdminAuth` 依赖 `next/server` 的 `NextResponse`，作为 Next.js 适配层放 kit 独立入口（`ops/next.ts`），**不得**混入纯逻辑层。
+
+**类型解耦**：守卫**不引入 `NextRequest` 作为参数类型**——Next.js 的 `NextRequest`/`NextResponse` 携带内部私有标记，不同 `node_modules` 物理副本间类型互不兼容。守卫以宽松泛型 `THandler` 原样透传服务侧签名，内部按鸭子类型读取 `request.cookies`（Next.js 15.3+/16 为 getter 属性，旧版为方法，运行时按形态自适应）。
 
 ### 2.8 错误码
 

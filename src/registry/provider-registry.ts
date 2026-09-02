@@ -136,7 +136,8 @@ export class ProviderRegistry<
    * 获取注册中心当前状态（用于调试/监控）
    */
   async getStatus(): Promise<KitRegistryStatus<P>> {
-    const availableResults = await Promise.allSettled(
+    // 健康检查异常在此吞掉（不可用即 false），故 Promise.all 不会 reject
+    const availability = await Promise.all(
       this.providers.map(async (p) => {
         try {
           return await p.isAvailable();
@@ -146,12 +147,9 @@ export class ProviderRegistry<
       })
     );
 
-    const providers = this.providers.map((p, i) => {
-      const result = availableResults[i];
-      const available =
-        result.status === "fulfilled" ? result.value : false;
-      return this.describeProvider(p, available);
-    });
+    const providers = this.providers.map((p, i) =>
+      this.describeProvider(p, availability[i])
+    );
 
     const active = providers.find((p) => p.available);
 

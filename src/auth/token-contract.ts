@@ -21,16 +21,23 @@ export const TOKEN_ENDPOINTS = {
 
 // ─── 错误 ──────────────────────────────────────────────────────────
 
+/**
+ * v1 token 端点返回的错误码值域（HTTP 映射与触发场景见 docs/token-contract.md §4）。
+ *
+ * 消费方据此区分「服务端业务拒绝」（命中值域 → 服务可达）与「通信层失败」
+ * （未命中 → 网络/超时，可触发探活降级）。
+ *
+ * introspect / lookup 不参与错误码（防枚举，统一 200 + { active: false }），
+ * 故校验不通过的具体原因（过期 / 已吊销 / 权限不符）不在本值域内。
+ */
 export const TOKEN_ERROR_CODES = [
   'INVALID_ARGUMENT',
+  'TOKEN_NOT_ACTIVE',
   'UNAUTHENTICATED',
   'PRODUCT_NOT_ALLOWED',
-  'PRODUCT_NOT_REGISTERED',
-  'PRODUCT_DISABLED',
+  'PRODUCT_NOT_FOUND',
   'TOKEN_NOT_FOUND',
-  'TOKEN_EXPIRED',
-  'TOKEN_REVOKED',
-  'TTL_LIMIT_EXCEEDED',
+  'TOKEN_CONFLICT',
   'RATE_LIMITED',
   'INTERNAL',
 ] as const;
@@ -59,7 +66,7 @@ export interface TokenIssueRequest {
   scope?: string[];
   /** 自定义声明；服务凭证模式（type='client-credential'）受扁平约束严格校验 */
   claims?: Record<string, unknown>;
-  /** 有效秒数，默认 86400 */
+  /** 有效秒数；不填 = 不设过期时间（永不过期，响应 expiresAt 为 null） */
   ttl?: number;
   /** 可公开的自定义声明（匿名 introspect 返回）；账户锚点 accountId 由调用方自报于此 */
   publicClaims?: Record<string, unknown>;
@@ -72,7 +79,8 @@ export interface TokenIssueRequest {
 export interface TokenIssueResponse {
   /** 凭证值（secret），仅本次签发响应返回一次 */
   token: string;
-  expiresAt: string;
+  /** 过期时间（ISO 8601）；签发时未传 ttl 则为 null（永不过期） */
+  expiresAt: string | null;
   /** 槽位标记（opaque，回显签发时的 tag） */
   tag: string;
   productId: string;
@@ -120,7 +128,8 @@ export interface TokenIntrospectResponse {
   /** 凭证归属产品（公开视图亦返回） */
   productId?: string;
   scope?: string[];
-  expiresAt?: string;
+  /** 过期时间（ISO 8601）；null = 永不过期 */
+  expiresAt?: string | null;
   claims?: TokenPublicClaims;
   /** 槽位标记（opaque）；全量视图返回，公开视图仅在 publicTag=true 时返回 */
   tag?: string;
@@ -130,17 +139,18 @@ export interface TokenIntrospectResponse {
 
 export interface TokenRefreshRequest {
   token: string;
-  /** 有效秒数，默认 86400 */
+  /** 有效秒数；不填 = 改为不设过期时间（永不过期，响应 expiresAt 为 null） */
   ttl?: number;
 }
 
 /**
- * 续期语义：令牌不变，仅延长过期时间。
- * 受总有效期硬上限约束（超限返回 400 TTL_LIMIT_EXCEEDED）。
+ * 续期语义：令牌值不变，仅延长过期时间。
+ * 无 TTL 硬上限（基建不评判调用方对过期时间的设置）。
  */
 export interface TokenRefreshResponse {
   success: boolean;
-  expiresAt: string;
+  /** 新的过期时间（ISO 8601）；未传 ttl 则为 null（永不过期） */
+  expiresAt: string | null;
 }
 
 // ─── Revoke ────────────────────────────────────────────────────────

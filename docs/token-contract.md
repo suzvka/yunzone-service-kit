@@ -107,7 +107,7 @@
 |---|---|---|---|
 | `active` | boolean | ✓ | 凭证是否有效（未过期、未吊销、签发主体未被停用） |
 | `productId` | string | ✓ | 凭证归属的产品标识（公开视图亦返回；业务侧唯一键，签发后不可变更） |
-| `expiresAt` | string(ISO8601) | ✓ | 过期时间 |
+| `expiresAt` | string(ISO8601) \| null | ✓ | 过期时间；`null` = 永不过期（签发未传 `ttl`） |
 | `scope` | string[] | - | 权限域；未授予时为空数组 |
 | `tag` | string | - | 槽位标记（opaque，即签发主体）；全量视图返回，公开视图仅在 `publicTag=true` 时返回（最小暴露） |
 
@@ -169,14 +169,17 @@
 | HTTP | code | 场景 |
 |---|---|---|
 | 400 | `INVALID_ARGUMENT` | 缺少必填字段、字段格式错误、claims 违反扁平约束、未知 `claims.type` |
+| 400 | `TOKEN_NOT_ACTIVE` | 目标 Token 不处于活跃状态 |
 | 401 | `UNAUTHENTICATED` | 调用方凭证无效或缺失 |
 | 403 | `PRODUCT_NOT_ALLOWED` | 真实凭证调用方越权操作其他产品 |
+| 404 | `PRODUCT_NOT_FOUND` | 产品不存在或已注销 |
 | 404 | `TOKEN_NOT_FOUND` | refresh / revoke 目标 token 不存在 |
 | 409 | `TOKEN_CONFLICT` | 并发双签发唯一冲突；跨类型替换被拒（v1.5 #22） |
 | 429 | `RATE_LIMITED` | 请求频率超限（响应含 `Retry-After`） |
 | 500 | `INTERNAL` | 内部服务错误 |
 
-> introspect / lookup 不参与上述错误码（防枚举，统一 200 + `{active:false}`）。
+> introspect / lookup 不参与上述错误码（防枚举，统一 200 + `{active:false}`）——校验不通过的具体原因（过期 / 已吊销 / 访问权撤销 / scope 不符）**不进入错误码值域**，消费方只读 `active` 字段。
+> 本表即 kit `TOKEN_ERROR_CODES` 的值域来源：两端必须同步，否则消费方「服务端业务拒绝 vs 通信层失败」的判据会误判（把业务拒绝当成服务不可达而触发探活降级）。
 
 ---
 

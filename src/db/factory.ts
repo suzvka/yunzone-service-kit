@@ -12,7 +12,7 @@
 import { resolveDatabaseUrl } from "../config";
 import { StorageConfigError } from "./errors";
 import { PgSqlDb } from "./pg";
-import type { DatabaseChannel, SqlDb, SqlDbConfig } from "./types";
+import type { SqlDb, SqlDbConfig } from "./types";
 
 /**
  * 创建 SQL 执行器（按 channel 分派凭证获取方式）
@@ -37,8 +37,11 @@ export function createSqlDb(
           "业务应选择非库存储后端（如文件）。"
       );
     default: {
+      // 编译期穷尽性守卫：新增渠道未在此分派即编译失败（运行期不可达）
       const exhaustive: never = config.channel;
-      return String(exhaustive) as never;
+      throw new StorageConfigError(
+        `[db/factory] 未分派的渠道: ${String(exhaustive)}`
+      );
     }
   }
 }

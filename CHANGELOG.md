@@ -2,6 +2,49 @@
 
 > **记录边界**：本日志只记录 kit 自身的契约 / 实现 / 兼容性变更。消费方（下游服务）的内部迁移细节、文件清单、依赖版本对齐一律不记——那是反向依赖：下游一改，本日志立刻变成错误信息源。需要表述下游影响时，只以「兼容性 / 升级提示」的中立形式写 kit 侧的行为约束，必要时点名**角色**（鉴权中心、用户中心、宿主应用）而不点名具体仓库。
 
+## 0.23.0 — 2026-09-02
+
+代码清理：删除零消费者的死代码、收敛重复实现与不可达兜底分支、修正契约副本与文档对实现的漂移。**含破坏性变更**（导出面收缩 + `/auth` 契约类型收紧）。
+
+### 删除（死代码，均已核实集群内零消费者）
+
+- **`/ops` 移除 legacy base64 明文会话 `createAdminSession` / `validateAdminSession` / `ValidateAdminSessionOptions`**：0.7.0 标记 `@deprecated` 并承诺「过渡一个版本后移除」，至此已跨 15 个版本；base64 明文会话内含明文密码，泄露即被永久伪造。替代：`createSignedAdminSession` / `validateSignedAdminSession`（v1.0 HMAC 协议）
+- **`/ops` 移除 `verifyAdminToken`**：明文密码直接比较，已被 `verifyAdminPasswordWithHash`（哈希比对，协议 2.5「模块加载时缓存哈希、此后不持有明文」）取代；其函数体与内部私有 `safeEqual` 逐字重复，常量时间比较现由后者单一承载
+- **`/config` 移除 `defineEnv`**：恒等函数（`return schema`），对类型推断无贡献——`loadEnv(z.object({...}))` 与 `loadEnv(defineEnv(z.object({...})))` 完全等价，多一层不降低心智负担
+- **`/ops/next` 移除 `AdminRouteHandler` / `AdminRouteRequestLike` / `AdminRequestCookiesLike` / `AdminRouteParams`**：四者均不参与实现（`requireAdminAuth` 以宽松泛型 `THandler` 原样透传服务侧签名），且 `AdminRouteHandler` 诱导出与实现不符的文档签名（见下「文档纠偏」）
+- **`/auth` `TOKEN_ERROR_CODES` 移除 `TTL_LIMIT_EXCEEDED`**：`docs/token-contract.md` v1.3 修订 #13 已删除该码（移除 TTL 硬上限），鉴权中心错误码值域中亦不存在
+- 配套：删除 `tests/type-experiment2.ts`（临时类型复现实验残留——不在 `tsconfig` include 内、非 `.test.ts` 故不被 vitest 执行，双重不可达）；`tests/admin.test.ts` 移除对应 10 用例；`tests/config.test.ts` 改用裸 `z.object`
+
+### `/auth` 契约副本对齐鉴权中心实现（破坏性）
+
+契约副本与服务端实现漂移，本次以服务端实现为准修正：
+
+- **`expiresAt` 可空**：`TokenIssueResponse.expiresAt` / `TokenRefreshResponse.expiresAt` 由 `string` 改为 `string | null`，`TokenIntrospectResponse.expiresAt` 由 `string | undefined` 改为 `string | null | undefined`——签发 / 续期未传 `ttl` 即永不过期，服务端返回 `null`。**破坏性**：读取该字段的消费方需处理 `null`
+- **`ttl` 语义纠正**：原注释「有效秒数，默认 86400」→「不填 = 不设过期时间」；`TokenRefreshResponse` 原注释「受总有效期硬上限约束（超限返回 400 TTL_LIMIT_EXCEEDED）」→「无 TTL 硬上限（基建不评判调用方对过期时间的设置）」，与 v1.3 修订 #12/#13 及服务端 `ttl ? ... : null` 实现一致
+- **`TOKEN_ERROR_CODES` 补齐 `TOKEN_CONFLICT` / `PRODUCT_NOT_FOUND` / `TOKEN_NOT_ACTIVE`**（鉴权中心 v1 token 端点实际返回，此前缺失）；**移除 `PRODUCT_NOT_REGISTERED` / `PRODUCT_DISABLED` / `TOKEN_EXPIRED` / `TOKEN_REVOKED`**（服务端错误码联合类型中存在但全仓零抛出点；且 introspect / lookup 按防枚举统一 200 + `active:false`，校验不通过的原因不经错误码通道）。`docs/token-contract.md` §4 错误表同步，并标注该表即 `TOKEN_ERROR_CODES` 的值域来源
+- **升级提示**：`TOKEN_ERROR_CODES` 被消费方用作「服务端业务拒绝 vs 通信层失败」的判据（命中值域即服务可达）。缺码会把业务拒绝误判为服务不可达而触发探活降级——补齐 `TOKEN_CONFLICT`（409 并发双签发）即修正该误判
+
+### 实现修正
+
+- **`PgSqlDb` 事务代理不再泄漏连接池**：原 `PgSqlDbTransaction extends PgSqlDb` 以 `super("__tx__")` 构造，注释称「跳过父类的 Pool 创建」，实际父类构造函数会创建一个随即被 `this.pool = client` 覆盖丢弃的 `Pool`（每次 `withTransaction` 泄漏一个池对象）。改为独立实现 `SqlDb`；查询 / 写语句原语抽为模块级 `runQuery` / `runExecute`，供连接池与事务连接共用（消除为复用归一化逻辑而继承的动机）。连带消除 `disconnect()` 的 `instanceof Pool` 兜底分支与 `getPool()` 的 override 抛错，`PgSqlDb.pool` 类型由 `Pool | PoolClient` 收窄为 `Pool`
+- **`isPoolProvider` 守卫语义收紧**：事务代理不再实现 `PoolProvider`，守卫对其返回 `false`——「守卫通过即可调用 `getPool()`」，消除原「守卫通过但调用抛错」的脏语义
+- **`ProviderRegistry.getStatus()` 去除不可达兜底**：内层已 `try/catch` 吞掉健康检查异常（不可用即 `false`），外层 `Promise.allSettled` + `status === "fulfilled"` 判断为永不触发的第二重兜底，改用 `Promise.all`
+- **渠道工厂穷尽性守卫改为 fail-fast**：`createSqlDb` / `createObjectStore` 的 `default` 分支原为 `return String(exhaustive) as never`（把字符串断言成 `never` 返回，运行期若触达即产生类型谎言），改为抛 `StorageConfigError` / `ObjectStoreConfigError`；`const exhaustive: never` 的编译期穷尽性保证不变
+- **重复实现收敛**：`config/env.ts` 私有 `schemaKeys` 与 `config/specs.ts` 公共 `facetKeys` 实现逐字相同，删除前者，`loadEnv` 失败诊断改用后者
+
+### 文档纠偏
+
+- **模块描述与实现对齐**：`src/index.ts` 的 `/db` 描述「互斥后端抽象（db-core：存储后端契约 + memory 实现）」→「SQL 数据库抽象（SqlDb 契约 + PgSqlDb 渠道适配器）」（memory 实现于 0.9.0 已删除）；`db/index.ts` / `core/index.ts`「渠道两模式」→「渠道三值域」（`none` 于 0.11.1 加入）；`db/types.ts` 删除「取代旧的『互斥后端』DbAdapter 通用 CRUD 原语」历史演进说明；`db/errors.ts` / `storage/errors.ts` 配置错误注释「当前无可用实现」（互斥后端时代措辞）→ 实际触发场景
+- **职责边界表述**：`ops/types.ts`「库不提供路由/响应封装」→ 限定为本入口并指向 `/ops/next`；`ops/admin.ts` 删除与逐函数 JSDoc 重复的「函数清单」目录式注释；`app/types.ts` 删除指向宿主内部类型（`Service` / `ServiceCard`）的耦合说明；`points/client.ts` 歧义表述「通信错误不带 cause 重试逻辑」→「kit 不代持重试」
+- **过期承诺叙述清理**：`config/specs.ts` 与 `.env.example` 删除 `AUTH_SERVER_*` legacy 别名的版本移除承诺（0.4.0 已兑现）；`config/base-url.ts` 纠正 `onmi-auth` → `omni-auth` 拼写
+- **`docs/admin-session-protocol.md` §2.7**：守卫签名 `requireAdminAuth(handler: AdminRouteHandler): AdminRouteHandler` → 实际泛型形态 `requireAdminAuth<THandler>(handler: THandler): THandler`；「依赖 `NextRequest`/`NextResponse`」→ 仅依赖 `next/server` 的 `NextResponse`，并补充「不引入 `NextRequest` 作为参数类型」的类型解耦依据
+- **`README.md`**：补齐缺失的 `/core`、`/ops/next`、`/auth`、`/points`、`/app`、`/app/next` 六个章节（原文只覆盖 5 个模块，且 `/ops` 章节列的是本次删除的 legacy 会话函数）；「零框架耦合（不依赖 Next.js/React）」→ 限定为纯逻辑层；`/db` 渠道补 `none`、补 `PoolProvider` / `isPoolProvider`、补事务边界约束；`/storage` 契约补 `getUploadUrl`；`adminFacet` 补 `ADMIN_USERNAME` / `ADMIN_SESSION_MAX_AGE`；删除 `defineEnv`
+- **`.env.example`**：删除重复声明的「对外 baseUrl」段（`PUBLIC_BASE_URL` 在文件中出现两次，`parseDotEnv` 下同键后值覆盖前值，构成配置陷阱），`BETTER_AUTH_URL` 归入部署面；补齐 `/storage` 全套变量（`STORAGE_PROVIDER` / `S3_*` / `COZE_BUCKET_*`）与管理面 `ADMIN_USERNAME` / `ADMIN_SESSION_MAX_AGE`、数据库面 `none` 渠道说明
+
+### 验证
+
+`tsc -p tsconfig.json` 0 错误；vitest 15 文件 199 用例全绿（清理前 209，差额为删除死代码的 10 个用例）；`tsup` 构建（ESM + CJS + DTS）成功。
+
 ## 0.21.0 — 2026-09-02
 
 `/auth` Token Authority 契约文档升级至 v1.6（登记表去账户化）；`/config` 契约面移除身份票据密钥。鉴权中心还原为纯 token 存储，业务用户 token 不再做 accountId 账户锚定，账户背书与支付风控归消费方与积分域。

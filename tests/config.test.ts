@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   EnvConfigError,
-  defineEnv,
   loadEnv,
   resolveBaseUrl,
   resolveDatabaseUrl,
@@ -19,15 +18,13 @@ afterEach(() => {
   delete process.env.KIT_TEST_OPTIONAL;
 });
 
-describe("defineEnv / loadEnv", () => {
+describe("loadEnv", () => {
   it("schema 校验通过时返回解析结果", () => {
     process.env.KIT_TEST_REQUIRED = "hello";
-    const schema = defineEnv(
-      z.object({
-        KIT_TEST_REQUIRED: z.string(),
-        KIT_TEST_OPTIONAL: z.string().optional(),
-      })
-    );
+    const schema = z.object({
+      KIT_TEST_REQUIRED: z.string(),
+      KIT_TEST_OPTIONAL: z.string().optional(),
+    });
 
     const env = loadEnv(schema);
     expect(env.KIT_TEST_REQUIRED).toBe("hello");
@@ -36,12 +33,10 @@ describe("defineEnv / loadEnv", () => {
 
   it("校验失败时抛 EnvConfigError 且含诊断快照", () => {
     delete process.env.KIT_TEST_REQUIRED;
-    const schema = defineEnv(
-      z.object({
-        KIT_TEST_REQUIRED: z.string(),
-        KIT_TEST_OPTIONAL: z.string().optional(),
-      })
-    );
+    const schema = z.object({
+      KIT_TEST_REQUIRED: z.string(),
+      KIT_TEST_OPTIONAL: z.string().optional(),
+    });
 
     expect(() => loadEnv(schema)).toThrowError(EnvConfigError);
     try {

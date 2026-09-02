@@ -22,5 +22,5 @@ export class UniqueViolationError extends StorageError {
   }
 }
 
-/** 数据库配置错误（渠道缺失/非法/当前无可用实现） */
+/** 数据库配置错误（渠道非法 / none 渠道下创建执行器 / 渠道凭证缺失） */
 export class StorageConfigError extends StorageError {}

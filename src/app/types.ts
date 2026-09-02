@@ -54,9 +54,8 @@ export interface AppManifestLinks {
 /**
  * AppManifest — 子产品自述契约（声明形态）
  *
- * 子产品以 JSON 形式声明自身介绍；字段集为用户中心既有 Service 类型的
- * 超集（新增 tagline / cover / banner / links / schemaVersion），
- * 既有 ServiceCard 可直接消费 ResolvedApp。
+ * 子产品以 JSON 形式声明自身介绍，宿主编排后经 resolveAppCatalog
+ * 合并为 ResolvedApp（消费方可直接渲染）。
  */
 export interface AppManifest {
   /** 契约版本（当前仅支持 "1.0"） */

@@ -2,7 +2,7 @@
  * yunzone-service-kit/config — 运行时配置层
  */
 
-export { EnvConfigError, defineEnv, loadEnv, envSnapshot } from "./env";
+export { EnvConfigError, loadEnv, envSnapshot } from "./env";
 export type { LoadEnvOptions } from "./env";
 export {
   EnvFileError,

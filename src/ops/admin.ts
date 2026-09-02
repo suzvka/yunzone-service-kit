@@ -10,12 +10,7 @@
  * - 校验顺序：分隔符 → 签名长度短路 + timingSafeEqual → 载荷 JSON 解析 → 过期检查；
  * - ADMIN_SESSION_MAX_AGE 控制会话有效期（秒），默认 86400（24h）。
  *
- * 函数清单：
- * - resolveAdminConfig：读取管理面配置（密码/路径/会话有效期），未设置密码时 enabled=false
- * - verifyAdminToken：常量时间密码比较（防时序攻击）
- * - hashAdminPassword / verifyAdminPasswordWithHash：登录密码哈希与常量时间比对（长度短路）
- * - createSignedAdminSession / validateSignedAdminSession：v1.0 HMAC 签名会话
- * - createAdminSession / validateAdminSession：legacy base64 明文会话（@deprecated，过渡后移除）
+ * 路由守卫（requireAdminAuth）属框架适配层，见独立入口 ops/next.ts。
  */
 
 import {
@@ -72,16 +67,15 @@ export function resolveAdminConfig(
 }
 
 /**
- * 校验管理 Token（常量时间比较，防时序攻击）。
- * 长度不等直接返回 false（不做比较）。
+ * 常量时间比较两个字符串（协议 2.4/2.5 共用的长度短路原语）。
+ * 长度不等直接返回 false：既避免 timingSafeEqual 对不等长 buffer 抛异常，
+ * 也不进入比较。
  */
-export function verifyAdminToken(token: string, expected: string): boolean {
-  const a = Buffer.from(token);
-  const b = Buffer.from(expected);
+function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) {
     return false;
   }
-  return timingSafeEqual(a, b);
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
 /**
@@ -92,28 +86,12 @@ export function hashAdminPassword(password: string): string {
   return createHash("sha256").update(password).digest("hex");
 }
 
-/**
- * 校验输入密码的哈希与缓存哈希是否一致（常量时间比较）。
- * 哈希后长度恒为 64，长度检查仅作 timingSafeEqual 的异常兜底（防不等长抛错）。
- */
+/** 校验输入密码的哈希与缓存哈希是否一致（常量时间比较，协议 2.5） */
 export function verifyAdminPasswordWithHash(
   input: string,
   cachedPasswordHash: string
 ): boolean {
-  const a = Buffer.from(hashAdminPassword(input));
-  const b = Buffer.from(cachedPasswordHash);
-  if (a.length !== b.length) {
-    return false;
-  }
-  return timingSafeEqual(a, b);
-}
-
-/** 常量时间比较两个字符串（长度不等直接返回 false，防抛异常） */
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  return safeEqual(hashAdminPassword(input), cachedPasswordHash);
 }
 
 /** 会话载荷（协议 2.3：u=用户名，i=随机 nonce，t=签发时间秒） */
@@ -222,61 +200,4 @@ export function validateSignedAdminSession(
   }
 
   return payload.u;
-}
-
-/**
- * @deprecated v1.0 起废弃（base64 明文会话内含明文密码，泄露即被永久伪造），
- * 过渡一个版本后移除；请改用 createSignedAdminSession。
- * 创建管理会话签名：`base64("admin:<password>:<timestamp>")`。
- */
-export function createAdminSession(
-  password: string,
-  now: number = Date.now()
-): string {
-  return Buffer.from(`admin:${password}:${now}`).toString("base64");
-}
-
-/** validateAdminSession 选项 */
-export interface ValidateAdminSessionOptions {
-  /** 会话有效期（毫秒），默认 30 分钟 */
-  maxAgeMs?: number;
-  /** 当前时间（可注入用于测试），默认 Date.now() */
-  now?: number;
-}
-
-/**
- * @deprecated v1.0 起废弃（base64 明文会话无法防伪造），
- * 过渡一个版本后移除；请改用 validateSignedAdminSession。
- * 校验管理会话：格式 → 密码匹配 → 过期检查。
- * 任一环节失败返回 false。
- */
-export function validateAdminSession(
-  session: string | undefined | null,
-  password: string,
-  options: ValidateAdminSessionOptions = {}
-): boolean {
-  if (!session) {
-    return false;
-  }
-
-  let decoded: string;
-  try {
-    decoded = Buffer.from(session, "base64").toString("utf8");
-  } catch {
-    return false;
-  }
-
-  const prefix = `admin:${password}:`;
-  if (!decoded.startsWith(prefix)) {
-    return false;
-  }
-
-  const timestamp = Number(decoded.slice(prefix.length));
-  if (!Number.isFinite(timestamp)) {
-    return false;
-  }
-
-  const maxAgeMs = options.maxAgeMs ?? 30 * 60 * 1000;
-  const now = options.now ?? Date.now();
-  return now - timestamp <= maxAgeMs;
 }

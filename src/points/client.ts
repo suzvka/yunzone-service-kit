@@ -7,8 +7,8 @@
  * - 协议层失败统一抛 PointsServiceError——deduct 失败时服务端状态不可确知，
  *   调用方按契约以同一 requestId 安全重试（幂等由服务端兜底）。
  *
- * 通信错误不带 cause 重试逻辑：是否重试、退避策略由消费方按业务时序决定
- * （如管线结算失败时的补偿语义），kit 不代持。
+ * kit 不代持重试：是否重试、退避策略由消费方按业务时序决定
+ * （如管线结算失败时的补偿语义）。
  */
 
 import { PointsServiceError } from "./errors";

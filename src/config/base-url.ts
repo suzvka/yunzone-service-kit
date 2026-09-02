@@ -6,7 +6,7 @@
  *   PUBLIC_BASE_URL → BETTER_AUTH_URL →（DEV 环境回退）→ PROJECT_DOMAIN_DEFAULT → fallback
  *
  * - PUBLIC_BASE_URL：服务对外 baseUrl 中立显式项，优先级最高（新增，规范推荐）
- * - BETTER_AUTH_URL：历史遗留兼容键（better-auth 库名遗留，onmi-auth 外部 npm 包契约；
+ * - BETTER_AUTH_URL：历史遗留兼容键（better-auth 库名遗留，omni-auth 外部 npm 包契约；
  *   不迁移、不降级，但新代码应使用 PUBLIC_BASE_URL）
  * - DEPLOY_ENV=DEV：开发环境回退到 fallback（平台域名为空/无效）
  * - PROJECT_DOMAIN_DEFAULT：项目默认域名（平台注入旧名 COZE_PROJECT_DOMAIN_DEFAULT

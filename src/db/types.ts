@@ -1,7 +1,7 @@
 /**
  * SQL 数据库抽象 — 核心类型定义
  *
- * 集群统一数据库抽象形状（取代旧的"互斥后端"DbAdapter 通用 CRUD 原语）：
+ * 集群统一数据库抽象形状：
  * - SQL 字符串即真理：调用方直接书写参数化 SQL（$1、$2 占位），无字段映射层
  * - 渠道三值域：postgres（通用）/ coze（平台注入）/ none（显式无库），渠道差异 = 连接凭证获取方式
  * - none 即显式无库声明：任何数据库操作（createSqlDb / resolveDatabaseUrl）对其 fail-fast 抛错，

@@ -9,6 +9,7 @@
 
 import { z } from "zod";
 import { loadDotEnv, type LoadDotEnvOptions } from "./dotenv";
+import { facetKeys } from "./specs";
 
 /** 环境变量校验失败（message 附带诊断快照） */
 export class EnvConfigError extends Error {
@@ -16,21 +17,6 @@ export class EnvConfigError extends Error {
     super(message);
     this.name = "EnvConfigError";
   }
-}
-
-/**
- * 声明环境变量 schema（恒等函数，仅用于语义化与类型复用）
- *
- * ```ts
- * const envSchema = defineEnv(z.object({
- *   STORAGE_PROVIDER: z.string(),
- *   COZE_BUCKET_NAME: z.string().optional(),
- * }));
- * const env = loadEnv(envSchema);
- * ```
- */
-export function defineEnv<S extends z.ZodType>(schema: S): S {
-  return schema;
 }
 
 /**
@@ -72,14 +58,6 @@ export function envSnapshot(
   return snapshot;
 }
 
-/** 提取 schema 顶层 key（用于诊断快照/运维指纹） */
-function schemaKeys(schema: z.ZodType): string[] {
-  if (schema instanceof z.ZodObject) {
-    return Object.keys(schema.shape);
-  }
-  return [];
-}
-
 /**
  * 用 schema 解析 process.env。
  *
@@ -106,7 +84,7 @@ export function loadEnv<S extends z.ZodType>(
     return result.data;
   }
 
-  const keys = schemaKeys(schema);
+  const keys = facetKeys(schema);
   const snapshot = Object.entries(envSnapshot(env, keys))
     .map(([k, v]) => `${k}=${v === "set" ? "***set***" : "(unset)"}`)
     .join(", ");

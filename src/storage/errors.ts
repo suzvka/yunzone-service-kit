@@ -13,5 +13,5 @@ import { KitError } from "../core";
 /** 对象存储基础设施错误基类 */
 export class ObjectStoreError extends KitError {}
 
-/** 对象存储配置错误（渠道缺失/非法/当前无可用实现） */
+/** 对象存储配置错误（渠道非法 / none 渠道下创建执行器 / 渠道凭证缺失或不完整） */
 export class ObjectStoreConfigError extends ObjectStoreError {}

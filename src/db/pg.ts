@@ -34,17 +34,13 @@ export interface PgSqlDbOptions {
  *
  * SqlDb 契约保持纯净（SQL 执行器心智），本能力接口单独声明，
  * 消费者用 isPoolProvider 类型守卫探测后调用，替代对具体类的类型断言。
+ * 事务代理不实现本接口——其连接归 withTransaction 所有，不外借。
  */
 export interface PoolProvider {
   getPool(): Pool;
 }
 
-/**
- * 类型守卫：判定给定对象是否提供连接池能力。
- *
- * 注意：事务代理（PgSqlDbTransaction）的 getPool 会抛错 fail-fast
- * （"事务代理不暴露连接池"），守卫通过不代表调用一定成功。
- */
+/** 类型守卫：判定给定对象是否提供连接池能力（事务代理返回 false） */
 export function isPoolProvider(db: unknown): db is SqlDb & PoolProvider {
   return (
     typeof db === "object" &&
@@ -65,8 +61,42 @@ function normalizeError(err: unknown): unknown {
   return err;
 }
 
+/**
+ * pg 查询能力最小面（连接池与事务连接均满足）。
+ * 查询/写语句原语抽为模块级函数供两者共用——事务代理因此无需继承 PgSqlDb。
+ */
+type PgQueryable = Pick<PoolClient, "query">;
+
+/** 查询原语：返回行数组，pg 错误经归一化后抛出 */
+async function runQuery<T>(
+  runner: PgQueryable,
+  sql: string,
+  params?: unknown[]
+): Promise<T[]> {
+  try {
+    const { rows } = await runner.query(sql, params as never[]);
+    return rows as T[];
+  } catch (err) {
+    throw normalizeError(err);
+  }
+}
+
+/** 写语句原语：返回受影响行数，pg 错误经归一化后抛出 */
+async function runExecute(
+  runner: PgQueryable,
+  sql: string,
+  params?: unknown[]
+): Promise<number> {
+  try {
+    const { rowCount } = await runner.query(sql, params as never[]);
+    return rowCount ?? 0;
+  } catch (err) {
+    throw normalizeError(err);
+  }
+}
+
 export class PgSqlDb implements SqlDb, PoolProvider {
-  protected pool: Pool | PoolClient;
+  private readonly pool: Pool;
 
   constructor(connectionString: string, options?: PgSqlDbOptions) {
     this.pool = new Pool({
@@ -77,31 +107,17 @@ export class PgSqlDb implements SqlDb, PoolProvider {
     });
   }
 
-  /**
-   * 获取底层 pg 连接池引用（宿主注入场景：如将池传给 omni-auth 等外部库）。
-   * 仅非事务实例可用；事务代理已 override 此方法抛错。
-   */
+  /** 获取底层 pg 连接池引用（宿主注入场景：如将池传给 omni-auth 等外部库） */
   getPool(): Pool {
-    // 非事务实例的 pool 恒为 Pool（见构造函数）；事务代理持有 PoolClient 并 override
-    return this.pool as Pool;
+    return this.pool;
   }
 
-  async query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
-    try {
-      const { rows } = await this.pool.query(sql, params as never[]);
-      return rows as T[];
-    } catch (err) {
-      throw normalizeError(err);
-    }
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
+    return runQuery<T>(this.pool, sql, params);
   }
 
-  async execute(sql: string, params?: unknown[]): Promise<number> {
-    try {
-      const { rowCount } = await this.pool.query(sql, params as never[]);
-      return rowCount ?? 0;
-    } catch (err) {
-      throw normalizeError(err);
-    }
+  execute(sql: string, params?: unknown[]): Promise<number> {
+    return runExecute(this.pool, sql, params);
   }
 
   /**
@@ -111,11 +127,10 @@ export class PgSqlDb implements SqlDb, PoolProvider {
    * 跨抽象事务互相不可见（外部库在池上另开连接），其写入会静默逃逸本事务。
    */
   async withTransaction<T>(fn: (db: SqlDb) => Promise<T>): Promise<T> {
-    const client = await (this.pool as Pool).connect();
+    const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const txDb = new PgSqlDbTransaction(client);
-      const result = await fn(txDb);
+      const result = await fn(new PgSqlDbTransaction(client));
       await client.query("COMMIT");
       return result;
     } catch (error) {
@@ -127,29 +142,30 @@ export class PgSqlDb implements SqlDb, PoolProvider {
   }
 
   async disconnect(): Promise<void> {
-    // 事务代理持有 PoolClient，不在此释放（由 withTransaction 的 finally 释放）
-    if (this.pool instanceof Pool) {
-      await this.pool.end();
-    }
+    await this.pool.end();
   }
 }
 
 /**
- * 事务代理：将执行器绑定到事务连接（PoolClient）。
- * 事务内禁止嵌套事务（fail-fast，取代静默回退）。
+ * 事务代理：把 SQL 执行绑定到 withTransaction 取出的单条连接。
+ *
+ * 独立实现 SqlDb 而非继承 PgSqlDb——继承会迫使 super() 先创建一个随即被覆盖
+ * 丢弃的 Pool（每次事务泄漏一个池对象）。连接所有权归 withTransaction（其
+ * finally 负责 release），故本类不实现 PoolProvider、不提供 disconnect；
+ * 嵌套事务 fail-fast（禁止静默回退）。
  */
-class PgSqlDbTransaction extends PgSqlDb {
-  constructor(client: PoolClient) {
-    // 跳过父类的 Pool 创建，直接注入事务连接
-    super("__tx__");
-    this.pool = client;
+class PgSqlDbTransaction implements SqlDb {
+  constructor(private readonly client: PoolClient) {}
+
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
+    return runQuery<T>(this.client, sql, params);
   }
 
-  override async withTransaction<T>(_fn: (db: SqlDb) => Promise<T>): Promise<T> {
+  execute(sql: string, params?: unknown[]): Promise<number> {
+    return runExecute(this.client, sql, params);
+  }
+
+  async withTransaction<T>(_fn: (db: SqlDb) => Promise<T>): Promise<T> {
     throw new Error("不支持嵌套事务");
-  }
-
-  override getPool(): Pool {
-    throw new Error("事务代理不暴露连接池");
   }
 }

@@ -2,7 +2,8 @@
  * 运维数据接口 — 标准报告格式
  *
  * 纯数据定义（零框架耦合）：服务负责把 OpsReporter 的输出暴露为 HTTP 端点
- * （如 /ops、/healthz），库不提供路由/响应封装。
+ * （如 /ops、/healthz），本入口不提供路由/响应封装；管理后台路由守卫属
+ * 框架适配层，见独立入口 yunzone-service-kit/ops/next。
  */
 
 import type { KitRegistryStatus } from "../registry";

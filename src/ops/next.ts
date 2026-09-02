@@ -19,31 +19,11 @@ import {
   validateSignedAdminSession,
 } from "./admin";
 
-/** 动态段参数（Next.js App Router） */
-export type AdminRouteParams = Record<string, string | string[]>;
-
-/** 鸭子类型：Next.js RequestCookies 最小面（守卫仅依赖此方法） */
-export interface AdminRequestCookiesLike {
-  get(name: string): { name: string; value: string } | undefined;
-}
-
 /**
- * 鸭子类型：Next.js NextRequest 最小面
- * cookies 形态兼容：Next.js 15.3+/16 为 getter 属性（RequestCookies 实例），
- * 旧版为方法（调用后返回 RequestCookies），守卫按运行时形态自适应。
+ * 宽松 handler 形态：不约束参数与返回类型，原样透传服务侧签名。
+ * 收紧为具体形状会触发跨 node_modules 副本的 Next.js 私有标记类型比较。
  */
-export interface AdminRouteRequestLike {
-  cookies: AdminRequestCookiesLike | (() => AdminRequestCookiesLike);
-}
-
-/** 管理后台路由处理函数（守卫可承载的服务侧 handler 形态） */
-export type AdminRouteHandler = (
-  request: AdminRouteRequestLike,
-  context: { params: Promise<AdminRouteParams> }
-) => Promise<Response>;
-
-/** 宽松 handler 形态（透传原签名的兜底约束，兼容任意服务侧签名） */
-type LooseAdminRouteHandler = (...args: any[]) => any;
+type AnyRouteHandler = (...args: any[]) => any;
 
 /**
  * 包装一个管理后台路由处理函数。
@@ -54,10 +34,10 @@ type LooseAdminRouteHandler = (...args: any[]) => any;
  *
  * 返回类型与原 handler 相同（服务侧保留自身 Next.js 副本的精确签名）。
  */
-export function requireAdminAuth<THandler extends LooseAdminRouteHandler>(
+export function requireAdminAuth<THandler extends AnyRouteHandler>(
   handler: THandler
 ): THandler {
-  const wrapped: LooseAdminRouteHandler = async (request, context) => {
+  const wrapped: AnyRouteHandler = async (request, context) => {
     const admin = resolveAdminConfig();
     if (!admin.enabled || !admin.password) {
       return NextResponse.json(

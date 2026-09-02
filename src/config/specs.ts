@@ -14,8 +14,7 @@
  *   - 项目私有命名空间（服务自有 schema 扩展）：自由命名，但不得占用平台注入命名空间；
  *   - 裸读禁令：禁止直接 process.env.COZE_* 裸读平台注入变量，必须经中立键
  *     （通用契约 + deploymentAliases / normalizeDeployEnv）或自有 schema 显式声明接入。
- * - 鉴权中心三要素规范名为 AUTH_CENTER_*（legacy 别名 AUTH_SERVER_* 已于 v0.4 移除，
- *   兑现 0.2 声明的 v0.3 移除承诺）。
+ * - 鉴权中心三要素规范名为 AUTH_CENTER_*。
  * - 管理面语义：ADMIN_PASSWORD 未设置 = 管理后台禁用（503），禁止默认密码回退。
  */
 
@@ -194,9 +193,7 @@ export function requiredFacet<
   }) as unknown as z.ZodType<MakeRequired<z.output<S>, Keys[number]>>;
 }
 
-/**
- * 提取 schema 顶层 key，供诊断快照/运维指纹使用。
- */
+/** 提取 schema 顶层 key（诊断快照 / 运维指纹白名单；loadEnv 失败诊断内部亦复用） */
 export function facetKeys(schema: z.ZodType): string[] {
   if (schema instanceof z.ZodObject) {
     return Object.keys(schema.shape);

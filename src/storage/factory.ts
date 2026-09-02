@@ -12,7 +12,7 @@
 import { resolveStorageConfig } from "../config";
 import { ObjectStoreConfigError } from "./errors";
 import { S3ObjectStore } from "./s3";
-import type { ObjectStore, ObjectStoreConfig, StorageChannel } from "./types";
+import type { ObjectStore, ObjectStoreConfig } from "./types";
 
 /**
  * 创建对象存储执行器（按 channel 分派凭证获取方式）
@@ -37,11 +37,11 @@ export function createObjectStore(
           "业务应选择非对象存储方案。"
       );
     default: {
+      // 编译期穷尽性守卫：新增渠道未在此分派即编译失败（运行期不可达）
       const exhaustive: never = config.channel;
-      return String(exhaustive) as never;
+      throw new ObjectStoreConfigError(
+        `[storage/factory] 未分派的渠道: ${String(exhaustive)}`
+      );
     }
   }
 }
-
-// 类型引用标注（避免未使用告警的同时保持类型面可见）
-export type { StorageChannel };
