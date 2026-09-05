@@ -1,3 +1,7 @@
+# 依赖构建脚本审批（pnpm 的 allowBuilds 门禁）：值留空或非法会让 pnpm install 以
+# ERR_PNPM_IGNORED_BUILDS 退出 1，进而卡死 prepublishOnly 与 pnpm run/exec 的前置依赖校验。
 allowBuilds:
-  esbuild: set this to true or false
-  sharp: set this to true or false
+  # tsup → bundle-require → esbuild（构建产物必需）；vitest → vite 亦依赖 esbuild
+  esbuild: true
+  # next 的可选依赖（图像优化）；本包只用 next 的类型与 next/server，不跑图像管线
+  sharp: false
