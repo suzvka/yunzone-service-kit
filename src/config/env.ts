@@ -19,8 +19,7 @@ export class EnvConfigError extends Error {
   }
 }
 
-/**
- * loadEnv 选项 */
+/** loadEnv 选项 */
 export interface LoadEnvOptions {
   /**
    * legacy 别名映射：规范 key → 旧变量名列表（过渡兼容用）。

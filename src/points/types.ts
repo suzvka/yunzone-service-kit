@@ -5,9 +5,9 @@
  * 与官方通信实现；账本本体（余额 / 复式流水 / 幂等约束）由用户中心持有。
  *
  * 端点语义（与用户中心 B 端接口一致）：
- * - POST /api/points/balance  { accountId } → { balance }
+ * - POST /api/points/balance  { accountId } → { success, balance }
  * - POST /api/points/deduct   { requestId, accountId, points, metadata? }
- *     → { ok, duplicate, balance?, reason? }
+ *     → { ok, duplicate, balance?, reason? }（裸 JSON，无信封字段）
  *
  * 幂等语义（扣款安全的核心）：
  * - requestId 为幂等键，用户中心侧以流水 UNIQUE(requestId) 约束保证
@@ -35,6 +35,8 @@ export interface PointsBalanceRequest {
 }
 
 export interface PointsBalanceResponse {
+  /** 服务端成功信封（用户中心响应助手展开顶层，恒 true；失败走非 2xx 错误通道） */
+  success: boolean;
   /** 当前可用积分 */
   balance: number;
 }

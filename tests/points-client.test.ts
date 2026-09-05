@@ -24,14 +24,14 @@ afterEach(() => {
 });
 
 describe('createPointsClient', () => {
-  it('balance：POST 到契约端点，body 为 { accountId }，返回 { balance }', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ balance: 100 }));
+  it('balance：POST 到契约端点，body 为 { accountId }，返回 { success, balance }', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ success: true, balance: 100 }));
     vi.stubGlobal('fetch', fetchMock);
 
     const client = createPointsClient({ baseUrl: `${BASE}/`, apiKey: 'sk-b' });
     const result = await client.balance({ accountId: 'acct-1' });
 
-    expect(result).toEqual({ balance: 100 });
+    expect(result).toEqual({ success: true, balance: 100 });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${BASE}${POINTS_ENDPOINTS.balance}`);
     expect(init.method).toBe('POST');

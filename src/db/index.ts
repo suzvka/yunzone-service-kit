@@ -1,5 +1,5 @@
 /**
- * yunzone-service-kit/db — SQL 数据库抽象（db-core）
+ * yunzone-service-kit/db — SQL 数据库抽象
  *
  * 集群统一数据库抽象形状：
  * - SQL 字符串即真理：参数化 SQL（$1 占位）直传，无字段映射层

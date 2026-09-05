@@ -1,5 +1,5 @@
 /**
- * yunzone-service-kit/storage — 对象存储抽象（storage-core）
+ * yunzone-service-kit/storage — 对象存储抽象
  *
  * 集群统一对象存储抽象形状（与 /db 的 SqlDb 抽象同构）：
  * - key 即真理：调用方直接组织 storage key，无字段映射层

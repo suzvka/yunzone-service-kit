@@ -48,7 +48,7 @@ export interface GetUploadUrlOptions {
 }
 
 /**
- * 对象存储执行器接口（storage-core 契约）
+ * 对象存储执行器契约
  *
  * 领域真理 = storage key + 文件内容：
  * - upload 返回实际存储的 key（调用方应以返回值持久化引用，不做隐式改名）

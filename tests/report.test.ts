@@ -59,6 +59,7 @@ describe("createOpsReporter", () => {
       SECRET_KEY: "unset",
     });
     expect(report.registries).toEqual({});
+    expect(report.sections).toEqual({});
   });
 
   it("显式 coze：平台注入旧名经适配层映射（COZE_* / DEPLOY_RUN_PORT）", async () => {
@@ -142,5 +143,88 @@ describe("createOpsReporter", () => {
     const report = await reporter.report();
     expect(report.envFingerprint.SECRET_KEY).toBe("set");
     expect(JSON.stringify(report)).not.toContain("sk-super-secret");
+  });
+
+  it("扩展段：同步 provider 数据进 sections（ok/data 信封）", async () => {
+    const reporter = createOpsReporter({
+      name: "test-service",
+      version: "0.0.0",
+      env: {},
+    });
+    reporter.addSection("apiHeat", () => ({ scope: "cards", total: 3 }));
+
+    const report = await reporter.report();
+    expect(report.sections.apiHeat).toEqual({
+      ok: true,
+      data: { scope: "cards", total: 3 },
+    });
+  });
+
+  it("扩展段：异步 provider 与多段并发聚合（数据形状由宿主自定义）", async () => {
+    const reporter = createOpsReporter({
+      name: "test-service",
+      version: "0.0.0",
+      env: {},
+    });
+    reporter.addSection("async", async () => ({ v: 1 }));
+    reporter.addSection("scalar", () => 42);
+
+    const report = await reporter.report();
+    expect(report.sections).toEqual({
+      async: { ok: true, data: { v: 1 } },
+      scalar: { ok: true, data: 42 },
+    });
+  });
+
+  it("扩展段：provider 抛错只降级该段（其余段与整份报告仍可用）", async () => {
+    const reporter = createOpsReporter({
+      name: "test-service",
+      version: "0.0.0",
+      env: {},
+    });
+    reporter.addSection("boom", () => {
+      throw new Error("heat counter unavailable");
+    });
+    reporter.addSection("fine", () => "ok");
+
+    const report = await reporter.report();
+    expect(report.sections.boom).toEqual({
+      ok: false,
+      error: "heat counter unavailable",
+    });
+    expect(report.sections.fine).toEqual({ ok: true, data: "ok" });
+    expect(report.service.name).toBe("test-service");
+  });
+
+  it("扩展段：rejected promise 同样降级；非 Error 抛出转字符串（不带堆栈）", async () => {
+    const reporter = createOpsReporter({
+      name: "test-service",
+      version: "0.0.0",
+      env: {},
+    });
+    reporter.addSection("reject", async () => {
+      throw new Error("async down");
+    });
+    reporter.addSection("raw", () => {
+      throw "raw-reason";
+    });
+
+    const report = await reporter.report();
+    expect(report.sections.reject).toEqual({ ok: false, error: "async down" });
+    expect(report.sections.raw).toEqual({ ok: false, error: "raw-reason" });
+    expect(JSON.stringify(report.sections)).not.toContain("at resolveSection");
+  });
+
+  it("扩展段：同 id 后注册者覆盖前者", async () => {
+    const reporter = createOpsReporter({
+      name: "test-service",
+      version: "0.0.0",
+      env: {},
+    });
+    reporter.addSection("dup", () => "first");
+    reporter.addSection("dup", () => "second");
+
+    const report = await reporter.report();
+    expect(report.sections.dup).toEqual({ ok: true, data: "second" });
   });
 });

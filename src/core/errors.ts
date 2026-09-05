@@ -24,13 +24,10 @@ export class KitError extends Error {
   readonly code: string;
 
   constructor(message: string, options?: KitErrorOptions) {
+    // cause 由 ES2022 Error 构造器安装（engines node>=18，无需运行时兜底）
     super(message, options?.cause !== undefined ? { cause: options.cause } : undefined);
     this.name = new.target.name;
     this.code = options?.code ?? this.name;
-    if (options?.cause !== undefined && (this as { cause?: unknown }).cause === undefined) {
-      // ES2022 以下运行时兜底：显式挂载 cause
-      Object.defineProperty(this, "cause", { value: options.cause, enumerable: false });
-    }
   }
 
   /** 序列化为可结构化日志的纯对象（不泄露堆栈） */

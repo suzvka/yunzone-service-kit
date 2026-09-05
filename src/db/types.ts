@@ -21,7 +21,7 @@ export interface SqlDbConfig {
 }
 
 /**
- * SQL 执行器接口（db-core 契约）
+ * SQL 执行器契约
  *
  * 领域真理 = SQL 字符串 + 参数化占位符（$1 等）：
  * - query 查询返回行数组（无命中返回空数组）；execute 写语句返回受影响行数

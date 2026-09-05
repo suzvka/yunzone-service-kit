@@ -1,6 +1,15 @@
-# yunzone-service-kit
+# yunzone-service-kit · 云洲接口套件
 
-云洲服务集群通用基础设施：**共享原语**（`/core`）、**插件式 Provider 注册中心基座**（`/registry`）、**运行时配置层**（`/config`）、**SQL 数据库抽象**（`/db`）、**对象存储抽象**（`/storage`）、**运维数据接口与管理后台认证**（`/ops`）、**鉴权中心契约与客户端**（`/auth`）、**积分服务契约与客户端**（`/points`）与**应用目录契约**（`/app`）。
+云洲服务集群通用基础设施：
+**共享原语**（`/core`）
+**插件式注册中心基座**（`/registry`）
+**运行时配置层**（`/config`）
+**SQL 数据库抽象**（`/db`）
+**对象存储抽象**（`/storage`）
+**运维数据接口与管理后台认证**（`/ops`）
+**鉴权中心契约与客户端**（`/auth`）
+**积分服务契约与客户端**（`/points`）
+**应用目录契约**（`/app`）
 
 纯逻辑层零框架耦合，任何 Node 服务可直接引用。Next.js 路由适配层拆为独立入口（`/ops/next`、`/app/next`；`next` 为 optional peerDependency），不引入这些子路径即不产生框架依赖。
 
@@ -8,15 +17,13 @@
 
 ### `/core` — 共享原语
 
-集群内两种并行抽象模式（`/registry` 并存 Provider 模式、`/db`+`/storage` 渠道分派模式）共用的基础形状：
-
+集群共用的基础形状：
 - `KitError`：领域错误统一基类，提供 `code`（默认取类名）/ `cause` / `toJSON()`（结构化日志用，不泄露堆栈）。各领域错误族（`StorageError` / `ObjectStoreError` / `AuthCenterError` / `PointsServiceError` / `AppManifestError`）均继承它，消费方按类 catch，不依赖字符串匹配
 - `LifecycleAware`：`init?()` / `disconnect?()` 钩子形状，由组合根统一调度（`SqlDb` / `ObjectStore` 均继承）
 
 ### `/registry` — 泛型 Provider 注册中心基座
 
-定义集群内所有"插件式 Provider"模式的公共契约（验证码、风控、对象存储等）：
-
+提供插件式泛型注册中心模块：
 - `KitProvider`：最小接口（元信息 `meta` + 健康检查 `isAvailable()`）
 - `ProviderRegistry<T, P>`：注册（重复 id 忽略）、优先级排序、健康检查优雅降级、`getStatus()` 状态快照
 - 领域注册中心通过继承复用调度逻辑，可扩展 `describeProvider` 追加领域字段
@@ -59,10 +66,10 @@ import {
   userCenterFacet,
 } from "yunzone-service-kit/config";
 
-// 组合分面（重复 key 抛错；全部 optional，缺省降级）
+// 组合分面
 const envSchema = composeFacets(deploymentFacet, authCenterFacet, userCenterFacet, adminFacet);
 
-// 模块级必填（如鉴权中心客户端三要素）
+// 模块级必填
 const authCenterEnvSchema = requiredFacet(authCenterFacet, [
   "AUTH_CENTER_URL",
   "AUTH_CENTER_API_KEY",
@@ -166,7 +173,8 @@ const url = await store.getSignedUrl(key);
 
 **运维报告聚合**：
 
-- `createOpsReporter({ name, version, env? })`：聚合服务信息、部署信息、注册中心状态快照、env set/unset 指纹（**不含变量值**）
+- `createOpsReporter({ name, version, env? })`：聚合服务信息、部署信息、注册中心状态快照、宿主扩展段、env set/unset 指纹（**不含变量值**）
+- `reporter.addSection(id, provider)`：挂载宿主自有运维数据（API 调用热度、队列积压、卡片目录快照等 kit 无契约的数据）。provider 每次 `report()` 时调用，同步/异步皆可；**抛错只把该段降级为 `{ ok: false, error }`**（只留消息不留堆栈），其余段与整份报告照常产出
 - 本入口**不提供 HTTP 端点**：服务自建路由，3 行封装 `/ops`：
 
 ```ts
@@ -175,10 +183,22 @@ import { facetKeys } from "yunzone-service-kit/config";
 
 const reporter = createOpsReporter({ name: "user-center", version: "1.2.3" });
 reporter.addRegistry("captcha", captchaRegistry);
+reporter.addSection("apiHeat", () => heatCounter.snapshot()); // 形状由宿主定义
 reporter.setEnvKeys(facetKeys(envSchema)); // 或手写白名单 ["AUTH_CENTER_URL", "DEPLOY_ENV"]
 
 export async function GET() {
   return Response.json(await reporter.report());
+}
+```
+
+扩展段在报告中的形态（消费方按 `ok` 收窄后读 `data`）：
+
+```jsonc
+{
+  "sections": {
+    "apiHeat": { "ok": true, "data": { /* 宿主自定义 */ } },
+    "queue": { "ok": false, "error": "counter unavailable" }
+  }
 }
 ```
 

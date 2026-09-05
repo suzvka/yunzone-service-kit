@@ -2,6 +2,43 @@
 
 > **记录边界**：本日志只记录 kit 自身的契约 / 实现 / 兼容性变更。消费方（下游服务）的内部迁移细节、文件清单、依赖版本对齐一律不记——那是反向依赖：下游一改，本日志立刻变成错误信息源。需要表述下游影响时，只以「兼容性 / 升级提示」的中立形式写 kit 侧的行为约束，必要时点名**角色**（鉴权中心、用户中心、宿主应用）而不点名具体仓库。
 
+## 0.24.0 — 2026-09-05
+
+`/ops` 运维报告新增**宿主扩展段**（`addSection` / `OpsReport.sections`）。标准报告此前是闭合四段（service / deployment / registries / envFingerprint），宿主自有的运维数据（API 调用热度、队列积压、卡片目录快照等）无承载面，只能各服务私改报告形状导致跨服务口径分叉。
+
+### 新增
+
+- **`OpsReporter.addSection(id, provider)`**：注册一个扩展段，`id` 为报告 `sections` 中的 key（同 id 后注册者覆盖前者）；provider 在每次 `report()` 时调用，类型 `() => unknown | Promise<unknown>`（同步 / 异步皆可）
+- **`OpsReport.sections: Record<string, OpsSectionResult>`**：扩展段快照，信封为 `{ ok: true, data }` / `{ ok: false, error }`；数据形状由宿主自定义，kit 不解释语义
+- **单段故障隔离**：provider 抛错（含返回 rejected promise）只把该段降级为 `{ ok: false, error }`（只留消息不留堆栈），其余段与整份报告照常产出——运维报告不因任一扩展段失效而整体不可用；各段并发聚合（宿主代码耗时未知，不串行拖长报告）
+
+### 兼容性 / 升级提示
+
+- `OpsReport` 新增**必填**字段 `sections`（未注册扩展段时为 `{}`）。只读取报告的消费方无感；仅在代码里手工构造 `OpsReport` 字面量的场景（如测试桩）需补该字段
+- 扩展段是宿主自有数据的出口，**kit 不为其定义契约**：跨服务口径统一由消费方约定 `id` 命名（如 `apiHeat`）与 `data` 形状
+- 扩展段不得携带密钥 / 明文凭证：`sections` 与 `envFingerprint` 同属对外可读的运维面，脏数据治理属宿主职责（kit 不过滤、不脏检查）
+
+## 0.23.1 — 2026-09-05
+
+代码清理（0.23.0 的后续轮次）：删除不可达兜底分支、清理旧术语残留、`/points` 契约副本对齐用户中心实现。非破坏性（契约变更面已核实集群内零引用）。
+
+### `/points` 契约副本对齐用户中心实现
+
+- **`PointsBalanceResponse` 补 `success: boolean`**：balance 端点（服务间 POST）经用户中心统一响应助手返回 `{ success: true, balance }`（数据字段展开顶层），原契约缺该信封字段；`deduct` 响应为裸 JSON（无信封字段），两端口径差异已在契约注释分别注明。**已核实 `PointsBalanceResponse` 集群内零引用，纯增量**
+- 配套：模块头注释端点语义同步；`tests/points-client.test.ts` balance 用例 mock 与断言同步
+
+### 实现简化
+
+- **`KitError` 删除 ES2022 以下 cause 兜底分支**：`engines` 声明 node>=18（tsup target node18 / tsconfig target ES2022），`new Error(msg, { cause })` 由运行时原生安装 cause，原「`(this as { cause?: unknown }).cause === undefined` 时显式挂载」分支不可达，行为等价删除
+
+### 注释/文档纠偏
+
+- 清理「db-core / storage-core」历史术语残留 4 处（`src/index.ts` storage 行、`db/index.ts` / `db/types.ts`、`storage/index.ts` / `storage/types.ts`——0.9.0/0.13.0 时代内部命名，「core」概念无承载面，跨仓零引用）；`config/env.ts` `LoadEnvOptions` JSDoc 格式修正
+
+### 验证
+
+`tsc -p tsconfig.json` 0 错误；vitest 15 文件 199 用例全绿；`tsup` 构建（ESM + CJS + DTS）成功。
+
 ## 0.23.0 — 2026-09-02
 
 代码清理：删除零消费者的死代码、收敛重复实现与不可达兜底分支、修正契约副本与文档对实现的漂移。**含破坏性变更**（导出面收缩 + `/auth` 契约类型收紧）。

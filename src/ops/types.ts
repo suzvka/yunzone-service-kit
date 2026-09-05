@@ -31,12 +31,28 @@ export interface OpsDeploymentInfo {
   port: number;
 }
 
+/** 扩展段数据源（宿主自有运维数据，如 API 调用热度；同步或异步皆可） */
+export type OpsSectionProvider = () => unknown | Promise<unknown>;
+
+/**
+ * 单个扩展段的聚合结果
+ *
+ * provider 抛错时降级为 `ok: false` + 错误消息（不含堆栈）：运维报告不因
+ * 任一扩展段失效而整体不可用。数据形状由宿主自定义（kit 不解释语义），
+ * 消费方按 `ok` 收窄后读取 `data`。
+ */
+export type OpsSectionResult =
+  | { ok: true; data: unknown }
+  | { ok: false; error: string };
+
 /** 标准运维报告 */
 export interface OpsReport {
   service: OpsServiceInfo;
   deployment: OpsDeploymentInfo;
   /** 各注册中心状态快照（key 为 addRegistry 时指定的 id） */
   registries: Record<string, KitRegistryStatus>;
+  /** 宿主扩展段快照（key 为 addSection 时指定的 id；provider 抛错即该段降级为 error） */
+  sections: Record<string, OpsSectionResult>;
   /** env set/unset 指纹（**不含变量值**，防密钥泄漏） */
   envFingerprint: Record<string, "set" | "unset">;
 }
