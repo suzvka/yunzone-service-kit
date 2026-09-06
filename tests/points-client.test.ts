@@ -1,7 +1,7 @@
 /**
  * /points 客户端执行层单测（stub 全局 fetch）
  *
- * 覆盖：balance / deduct 契约透传（含 duplicate 与 ok:false 业务结果不抛错）、
+ * 覆盖：balance / deduct / deposit 契约透传（含 duplicate 与 ok:false 业务结果不抛错）、
  * 鉴权头与 URL 组装、错误归一化（协议层失败抛 PointsServiceError）。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -115,5 +115,64 @@ describe('createPointsClient', () => {
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  // ── deposit（算力报酬存入，平台内部端点） ──────────────────────
+
+  it('deposit：请求体含 requestId / accountId / points / metadata，透传响应（含 orderNo）', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ ok: true, duplicate: false, orderNo: 'PA20260906123456ABC', balance: 150 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createPointsClient({ baseUrl: BASE, apiKey: 'sk-infer' });
+    const result = await client.deposit({
+      requestId: 'deposit-001',
+      accountId: 'acct-1',
+      points: 50,
+      metadata: { period: '2026-W36', taskCount: 12 },
+    });
+
+    expect(result).toEqual({ ok: true, duplicate: false, orderNo: 'PA20260906123456ABC', balance: 150 });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${BASE}${POINTS_ENDPOINTS.deposit}`);
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-infer');
+    expect(JSON.parse(init.body as string)).toEqual({
+      requestId: 'deposit-001',
+      accountId: 'acct-1',
+      points: 50,
+      metadata: { period: '2026-W36', taskCount: 12 },
+    });
+  });
+
+  it('deposit 幂等命中：duplicate:true 正常返回，不抛错', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ok: true, duplicate: true, orderNo: 'PA-EXISTING' })));
+
+    const client = createPointsClient({ baseUrl: BASE, apiKey: 'sk-infer' });
+    await expect(
+      client.deposit({ requestId: 'deposit-001', accountId: 'acct-1', points: 50 }),
+    ).resolves.toEqual({ ok: true, duplicate: true, orderNo: 'PA-EXISTING' });
+  });
+
+  it('deposit 业务失败：ok:false + reason 正常返回（不属协议层错误）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ ok: false, duplicate: false, reason: 'DEPOSIT_LIMIT_EXCEEDED' })),
+    );
+
+    const client = createPointsClient({ baseUrl: BASE, apiKey: 'sk-infer' });
+    await expect(
+      client.deposit({ requestId: 'deposit-002', accountId: 'acct-1', points: 99999 }),
+    ).resolves.toMatchObject({ ok: false, reason: 'DEPOSIT_LIMIT_EXCEEDED' });
+  });
+
+  it('deposit 非 2xx → PointsServiceError（调用方可按契约以同一 requestId 安全重试）', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ message: 'forbidden' }, 403)));
+
+    const client = createPointsClient({ baseUrl: BASE, apiKey: 'sk-wrong' });
+    await expect(
+      client.deposit({ requestId: 'deposit-003', accountId: 'acct-1', points: 10 }),
+    ).rejects.toMatchObject({ name: 'PointsServiceError', code: 'POINTS_PROTOCOL_ERROR' });
   });
 });

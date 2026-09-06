@@ -1,6 +1,6 @@
 {
   "name": "yunzone-service-kit",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "云洲服务集群通用基础设施：插件式注册中心基座（/registry）、运行时配置层（/config）、SQL 数据库抽象（/db）、对象存储抽象（/storage）、共享原语（/core）、运维数据接口（/ops）、鉴权中心契约与客户端（/auth）、积分服务契约与客户端（/points）与应用目录契约（/app）",
   "license": "MIT",
   "private": false,

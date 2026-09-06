@@ -18,6 +18,8 @@ import type {
   PointsBalanceResponse,
   PointsDeductRequest,
   PointsDeductResponse,
+  PointsDepositRequest,
+  PointsDepositResponse,
 } from "./types";
 
 /** 积分服务客户端配置（显式注入，kit 不读环境变量） */
@@ -40,6 +42,12 @@ export interface PointsClient {
    * （此时可用同一 requestId 安全重试，见模块契约说明）。
    */
   deduct(request: PointsDeductRequest): Promise<PointsDeductResponse>;
+  /**
+   * 算力报酬存入（平台内部端点，仅基础设施可调）。
+   * 语义：用户主动将 infer 内部台账汇总后存入平台积分账户。
+   * 业务结果（含 duplicate / ok:false）正常返回；协议层失败抛 PointsServiceError。
+   */
+  deposit(request: PointsDepositRequest): Promise<PointsDepositResponse>;
 }
 
 /** 创建积分服务客户端 */
@@ -85,6 +93,10 @@ export function createPointsClient(config: PointsClientConfig): PointsClient {
 
     async deduct(request: PointsDeductRequest): Promise<PointsDeductResponse> {
       return post<PointsDeductResponse>(POINTS_ENDPOINTS.deduct, request);
+    },
+
+    async deposit(request: PointsDepositRequest): Promise<PointsDepositResponse> {
+      return post<PointsDepositResponse>(POINTS_ENDPOINTS.deposit, request);
     },
   };
 }

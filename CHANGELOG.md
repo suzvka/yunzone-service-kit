@@ -2,6 +2,27 @@
 
 > **记录边界**：本日志只记录 kit 自身的契约 / 实现 / 兼容性变更。消费方（下游服务）的内部迁移细节、文件清单、依赖版本对齐一律不记——那是反向依赖：下游一改，本日志立刻变成错误信息源。需要表述下游影响时，只以「兼容性 / 升级提示」的中立形式写 kit 侧的行为约束，必要时点名**角色**（鉴权中心、用户中心、宿主应用）而不点名具体仓库。
 
+## 0.25.0 — 2026-09-06
+
+`/points` 契约扩展 **deposit**（算力报酬存入）。生态循环的产出侧：infer 控制面将算力提供者积累的内部台账汇总后存入平台积分账户，与 deduct（消费侧）共同构成完整积分生命周期。
+
+### 新增
+
+- **`POINTS_ENDPOINTS.deposit`**：`/api/internal/points/deposit`（平台内部端点，非 B 端产品 API）
+- **`PointsDepositRequest`** / **`PointsDepositResponse`**：存入契约（requestId 幂等、orderNo 存入凭证、balance 存入后余额）
+- **`PointsClient.deposit()`**：官方通信实现，镜像 deduct 行为（业务结果正常返回、协议层失败抛 `PointsServiceError`）
+
+### 信任层级
+
+- deposit 端点位于 `/api/internal/` 前缀，用户中心侧以 productId 白名单限制调用方（仅平台基础设施可调）
+- 与 deduct（`/api/points/`，任何 B 端产品凭证可调）形成信任分层
+- 任务完成验证、防滥用、限额等安全逻辑全在 infer 内部承担，用户中心只做记账
+
+### 兼容性 / 升级提示
+
+- 纯增量：`PointsClient` 接口新增 `deposit` 方法，现有 `balance` / `deduct` 行为不变
+- 消费方无需升级即可继续使用现有功能；仅 infer 控制面需使用新契约
+
 ## 0.24.0 — 2026-09-05
 
 `/ops` 运维报告新增**宿主扩展段**（`addSection` / `OpsReport.sections`）。标准报告此前是闭合四段（service / deployment / registries / envFingerprint），宿主自有的运维数据（API 调用热度、队列积压、卡片目录快照等）无承载面，只能各服务私改报告形状导致跨服务口径分叉。
