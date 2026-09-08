@@ -7,6 +7,7 @@
 export * from "./types";
 export { AppManifestError } from "./errors";
 export {
+  appApiEntrySchema,
   appManifestSchema,
   parseAppManifest,
   type ParsedAppManifest,

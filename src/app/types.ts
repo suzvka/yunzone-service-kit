@@ -5,6 +5,8 @@
  * - 为集群子产品提供标准"应用介绍"自描述契约（AppManifest v1）：
  *   应用名 / 简介 / 访问链接 / 图标 / 封面图 / 背景图 / 状态 / 标签 / 链接
  * - 子产品按契约声明自身介绍，宿主（如用户中心）聚合后标准渲染、随意编排
+ * - 子产品可另行自述"本应用提供哪些 API"（可选顶层 apis 命名空间），
+ *   宿主按同一链路拉取聚合后标准渲染 API 展示版面
  * - Headless 纯数据层：契约 + 解析 + 聚合均为纯逻辑，零框架 / 零 React 依赖
  *
  * 编排心智：
@@ -30,6 +32,31 @@ export type AppManifestStatus =
   | "beta"
   | "coming_soon"
   | "maintenance";
+
+/** API 条目 HTTP 方法（展示用标识）；缺省 "GET" */
+export type AppApiMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+/**
+ * API 条目 — 子产品自述"本应用提供一个 API"（纯展示形态）
+ *
+ * 面向宿主侧 API 展示版面：只声明人可读的标识信息（名称 / 描述 /
+ * 方法 / 路径 / 标签），不承载请求 / 响应 schema 等机器契约；
+ * 程序化调用诉求出现时再扩展。
+ */
+export interface AppApiEntry {
+  /** 应用内唯一标识（版面锚点与程序化引用；重复抛错，见 APP_MANIFEST_API_DUPLICATE_ID） */
+  id: string;
+  /** API 名称（人可读，非空） */
+  name: string;
+  /** 一句话描述（非空） */
+  summary: string;
+  /** HTTP 方法；缺省 "GET" */
+  method?: AppApiMethod;
+  /** 路径（相对应用 origin，如 "/api/v1/text/diagnose"） */
+  path: string;
+  /** 分组标签；缺省 [] */
+  tags?: string[];
+}
 
 /** 应用视觉资产 */
 export interface AppManifestAssets {
@@ -60,6 +87,11 @@ export interface AppManifestLinks {
 export interface AppManifest {
   /** 契约版本（当前仅支持 "1.0"） */
   schemaVersion: string;
+  /**
+   * API 清单（可选，缺省 []）：子产品自述"本应用提供哪些 API"，
+   * 供宿主 API 展示版面消费；条目 id 应用内唯一，重复抛错
+   */
+  apis?: AppApiEntry[];
   app: {
     /** 唯一标识（如 "wanyanai"），应与编排 entry.id 一致 */
     id: string;
@@ -108,7 +140,8 @@ export interface AppCatalogEntry {
  * 解析后的标准卡片数据 — 消费方直接渲染形态
  *
  * 归一化保证：tagline 回退 description、tags 恒为数组、
- * links 缺省字段恒为 undefined、status 恒为合法枚举。
+ * links 缺省字段恒为 undefined、status 恒为合法枚举、
+ * apis 恒为数组（条目 method 缺省 GET、tags 缺省 []）。
  */
 export interface ResolvedApp {
   /** 唯一标识 */
@@ -127,6 +160,8 @@ export interface ResolvedApp {
   assets: AppManifestAssets;
   /** 标签（恒为数组） */
   tags: string[];
+  /** API 清单（恒为数组，缺省 []；来自 manifest 顶层 apis） */
+  apis: AppApiEntry[];
   /** 附加链接（缺省字段为 undefined） */
   links: AppManifestLinks;
   /** 编排顺序（未设置为 undefined） */

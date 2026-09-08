@@ -79,6 +79,7 @@ export function resolveAppCatalog(
       status: entry.status ?? manifest.app.status,
       assets: manifest.app.assets,
       tags: manifest.app.tags,
+      apis: manifest.apis,
       links: {
         docs: manifest.app.links?.docs,
         source: manifest.app.links?.source,

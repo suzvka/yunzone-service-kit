@@ -15,6 +15,22 @@ import type { AppManifest } from "../src/app";
 function fullManifest(): AppManifest {
   return {
     schemaVersion: "1.0",
+    apis: [
+      {
+        id: "text-diagnose",
+        name: "文本诊断",
+        summary: "对输入文本执行框架级诊断分析。",
+        method: "POST",
+        path: "/api/v1/text/diagnose",
+        tags: ["文本", "同步"],
+      },
+      {
+        id: "plugin-list",
+        name: "插件清单",
+        summary: "返回当前已启用的功能插件列表。",
+        path: "/api/v1/plugins",
+      },
+    ],
     app: {
       id: "wanyanai",
       name: "WanyanAI",
@@ -72,6 +88,15 @@ describe("parseAppManifest", () => {
       source: "https://github.com/example/wanyanai",
       support: undefined,
     });
+    expect(manifest.apis).toHaveLength(2);
+    expect(manifest.apis[0]).toEqual({
+      id: "text-diagnose",
+      name: "文本诊断",
+      summary: "对输入文本执行框架级诊断分析。",
+      method: "POST",
+      path: "/api/v1/text/diagnose",
+      tags: ["文本", "同步"],
+    });
   });
 
   it("缺省字段归一化：status → live、tags → []", () => {
@@ -80,6 +105,38 @@ describe("parseAppManifest", () => {
     expect(manifest.app.tags).toEqual([]);
     expect(manifest.app.tagline).toBeUndefined();
     expect(manifest.app.links).toBeUndefined();
+  });
+
+  it("apis 缺省归一化为 []，条目 method → GET、tags → []", () => {
+    const manifest = parseAppManifest(minimalManifest());
+    expect(manifest.apis).toEqual([]);
+    const full = parseAppManifest(fullManifest());
+    expect(full.apis[1].method).toBe("GET");
+    expect(full.apis[1].tags).toEqual([]);
+  });
+
+  it("apis 条目重复 id 抛错（APP_MANIFEST_API_DUPLICATE_ID）", () => {
+    const manifest = fullManifest();
+    const entry = manifest.apis![0];
+    manifest.apis = [entry, { ...entry }];
+    expect(() => parseAppManifest(manifest)).toThrowError(
+      expect.objectContaining({ code: "APP_MANIFEST_API_DUPLICATE_ID" })
+    );
+  });
+
+  it("apis 条目非法形态（summary 空串）抛错，诊断含字段路径", () => {
+    const manifest = fullManifest();
+    manifest.apis = [
+      { id: "x", name: "X", summary: "", method: "POST", path: "/x" },
+    ];
+    try {
+      parseAppManifest(manifest);
+      expect.unreachable("should throw");
+    } catch (err) {
+      const e = err as AppManifestError;
+      expect(e.code).toBe("APP_MANIFEST_INVALID");
+      expect(e.message).toContain("apis.0.summary");
+    }
   });
 
   it("缺失必填字段（icon）抛 AppManifestError，code 为 APP_MANIFEST_INVALID", () => {
@@ -163,6 +220,11 @@ describe("resolveAppCatalog", () => {
     expect(app.status).toBe("live");
     expect(app.assets.icon).toBe("/icons/wanyanai.png");
     expect(app.tags).toEqual(["开源框架", "可定制"]);
+    expect(app.apis).toHaveLength(2);
+    expect(app.apis[0].id).toBe("text-diagnose");
+    expect(app.apis[0].method).toBe("POST");
+    expect(app.apis[1].method).toBe("GET");
+    expect(app.apis[1].tags).toEqual([]);
     expect(app.links.docs).toBe("https://docs.example.com/wanyanai");
     expect(app.links.support).toBeUndefined();
     expect(app.order).toBeUndefined();
@@ -176,6 +238,7 @@ describe("resolveAppCatalog", () => {
     expect(apps[0].tagline).toBe(
       "RimWorld 专用 LLM 接口，预置游戏世界知识。"
     );
+    expect(apps[0].apis).toEqual([]);
   });
 
   it("编排覆盖：name / status 覆盖 manifest 声明", () => {

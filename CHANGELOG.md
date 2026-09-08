@@ -2,6 +2,24 @@
 
 > **记录边界**：本日志只记录 kit 自身的契约 / 实现 / 兼容性变更。消费方（下游服务）的内部迁移细节、文件清单、依赖版本对齐一律不记——那是反向依赖：下游一改，本日志立刻变成错误信息源。需要表述下游影响时，只以「兼容性 / 升级提示」的中立形式写 kit 侧的行为约束，必要时点名**角色**（鉴权中心、用户中心、宿主应用）而不点名具体仓库。
 
+## 0.27.0 — 2026-09-09
+
+AppManifest v1 新增**可选顶层 `apis` 命名空间**：子产品自述"本应用提供哪些 API"，宿主（用户中心）按既有拉取链路聚合后在 API 展示版面消费。纯增量可选字段，`schemaVersion` 不变。
+
+### 新增
+
+- **`AppApiEntry` / `AppApiMethod`**：API 条目契约（`id` / `name` / `summary` / `method` / `path` / `tags`），纯展示形态——只声明人可读标识信息，不承载请求 / 响应 schema 等机器契约
+- **`appManifestSchema.apis`**：顶层可选数组（`z.array(appApiEntrySchema).default([])`）；解析归一化：`apis` 缺省 `[]`、条目 `method` 缺省 `"GET"`、`tags` 缺省 `[]`
+- **`appApiEntrySchema`**：条目 schema 单独导出，宿主可复用组合扩展
+- **`ResolvedApp.apis`**：清单经 `resolveAppCatalog` 透传（恒为数组）；无编排覆盖语义（API 清单是子产品自述）
+- **错误码 `APP_MANIFEST_API_DUPLICATE_ID`**：`apis` 条目 `id` 重复在解析期 fail-fast（对齐编排目录重复 `id` 行为）
+
+### 兼容性 / 升级提示
+
+- 纯增量：不声明 `apis` 的 manifest 解析结果不变（`apis` 归一化为 `[]`），既有消费方无感
+- **方向性兼容（zod strip）**：旧版解析器（≤ 0.26.x）对带 `apis` 的 manifest 会静默丢弃该字段（zod 默认 strip 未声明字段）而非报错——宿主消费 `apis` 前须升级到本版本（kit 先发，下游后升）
+- 条目契约的单一事实源见 [docs/app-manifest.md](docs/app-manifest.md) §2.5
+
 ## 0.26.0 — 2026-09-09
 
 服务凭证配置迁移到单渠道**凭证文件**：鉴权中心服务凭证（apiKey / productId / 服务地址）不再走环境变量，`authCenterFacet` 退役，`/auth` 新增凭证文件加载面。

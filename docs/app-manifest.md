@@ -1,8 +1,8 @@
 # 应用目录契约（AppManifest v1）
 
-> 版本：v1.0（2026-08-24）
+> 版本：v1.0（2026-08-24；v1 内 2026-09-09 新增可选顶层 `apis` 命名空间）
 > 单一事实源：本文件 + [src/app/manifest.ts](../src/app/manifest.ts) zod schema 与类型定义。
-> 适用范围：集群子产品（如 WanyanAI）自述"应用介绍"的契约；宿主（如用户中心）聚合后标准渲染、随意编排。
+> 适用范围：集群子产品（如 WanyanAI）自述"应用介绍"与"本应用提供哪些 API"的契约；宿主（如用户中心）聚合后标准渲染、随意编排。
 > 形态：**Headless 纯数据层**——只提供契约、解析器与聚合纯函数，不涉及任何渲染组件。
 
 ---
@@ -34,6 +34,7 @@
 |---|---|---|---|
 | `schemaVersion` | string | ✓ | 契约版本；当前仅支持 `"1.0"`，其余抛错（`APP_MANIFEST_VERSION_UNSUPPORTED`） |
 | `app` | object | ✓ | 应用介绍主体（见 2.2） |
+| `apis` | AppApiEntry[] | - | API 清单（见 2.5）；缺省 `[]` |
 
 ### 2.2 `app` 命名空间
 
@@ -64,6 +65,45 @@
 | `docs` | string | 文档链接 |
 | `source` | string | 开源仓库链接 |
 | `support` | string | 支持 / 反馈链接 |
+
+### 2.5 `apis` 命名空间（顶层，v1 可选扩展）
+
+子产品自述"本应用提供哪些 API"，供宿主（如用户中心）API 展示版面消费。**纯展示形态**：只声明人可读的标识信息，不承载请求 / 响应 schema 等机器契约；程序化调用诉求出现时再扩展。
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| `id` | string | ✓ | 应用内唯一标识（版面锚点与程序化引用）；重复抛错（`APP_MANIFEST_API_DUPLICATE_ID`） |
+| `name` | string | ✓ | API 名称（人可读，非空） |
+| `summary` | string | ✓ | 一句话描述（非空） |
+| `method` | enum | - | `GET` / `POST` / `PUT` / `PATCH` / `DELETE`；缺省 `"GET"` |
+| `path` | string | ✓ | 路径（相对应用 origin，如 `/api/v1/text/diagnose`） |
+| `tags` | string[] | - | 分组标签；缺省 `[]` |
+
+条目级示例（字段示意，非线上返回）:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "apis": [
+    {
+      "id": "text-diagnose",
+      "name": "文本诊断",
+      "summary": "对输入文本执行框架级诊断分析。",
+      "method": "POST",
+      "path": "/api/v1/text/diagnose",
+      "tags": ["文本", "同步"]
+    }
+  ],
+  "app": { "...": "同 §3，此处省略" }
+}
+```
+
+行为规范：
+
+- 解析归一化：`apis` 缺省 `[]`，条目 `method` 缺省 `"GET"`、`tags` 缺省 `[]`；`ResolvedApp.apis` 恒为数组，经 `resolveAppCatalog` 透传
+- **无编排覆盖语义**：API 清单是子产品自述，宿主编排条目不提供覆盖（与 `name` / `status` 不同）
+- 清单一致性：条目 `id` 重复在解析期 fail-fast（`APP_MANIFEST_API_DUPLICATE_ID`），子产品自检即可发现
+- 宿主可经 `appApiEntrySchema` 复用条目校验组合扩展
 
 ---
 
@@ -139,12 +179,15 @@ const apps = resolveAppCatalog([
 - **解析失败** 默认抛错（构建期友好）；`{ skipInvalid: true }` 时 `console.warn` 并跳过该条目
 - 纯同步、无副作用、幂等
 
+`apis` 清单随 manifest 一并校验并透传到 `ResolvedApp.apis`（见 2.5），无编排覆盖语义。
+
 ### 4.3 错误码
 
 | code | 场景 |
 |---|---|
 | `APP_MANIFEST_INVALID` | manifest 解析失败（message 含 zod 字段路径诊断与可选 source 标注） |
 | `APP_MANIFEST_VERSION_UNSUPPORTED` | `schemaVersion` 非当前支持版本 |
+| `APP_MANIFEST_API_DUPLICATE_ID` | manifest `apis` 条目重复 `id` |
 | `APP_CATALOG_DUPLICATE_ID` | 编排条目重复 `id` |
 
 ---
@@ -176,3 +219,4 @@ https://<子产品域名>/.well-known/app-manifest.json
 - 契约版本经 `schemaVersion` 显式声明；当前仅支持 `"1.0"`。
 - 新增字段只允许为可选字段，且不得改变既有字段的类型与语义（向前兼容，与 Token Authority 契约同规）。
 - 宿主解析器对旧版本保持兼容；不支持的新版本由解析器显式抛错，禁止静默降级。
+- **可选字段的方向性兼容（zod strip）**：`apis` 为 kit 0.27.0 起的可选新增字段；旧版解析器（≤ 0.26.x）对带 `apis` 的 manifest 会**静默丢弃**该字段（zod 默认 strip 未声明字段）而非报错——消费方依赖 `apis` 前，须先升级 kit 并同步下游依赖（发布时序：kit 先发，下游后升）。
