@@ -1,13 +1,19 @@
-# Token Authority 服务契约（共识版 v1.6）
+# Token Authority 服务契约（共识版 v1.7）
 
-> 版本：v1.6（2026-09）
+> 版本：v1.7（2026-09）
 > 来源：用户中心「服务凭证（Service Credential）证书契约需求单 v1.0」，经鉴权中心（yunzone_auth）与消费方（yunzone_user_center / WanyanAI）评审修订；v1.4 新增「accountId 账户锚定」与「身份票据」契约；v1.5 结算 P1 事故（UC-TICKET-20260902-001）；v1.6 登记表去账户化——鉴权中心还原为纯 token 存储，业务用户 token 不再做 accountId 账户锚定，移除身份票据 / isPlatform 豁免，账户背书与支付风控归消费方与积分域。
 > 单一事实源：本文件 + [src/auth/token-contract.ts](../src/auth/token-contract.ts) 类型定义。
 > 适用范围：Token Authority Service（鉴权中心）与宿主应用之间的服务凭证签发 / 校验 / 续期 / 吊销接口契约。
 
 ---
 
-## 0. 修订记录（v1.0 → v1.6）
+## 0. 修订记录（v1.0 → v1.7）
+
+### v1.7
+
+| # | 修订点 | 决策 |
+|---|---|---|
+| 30 | 服务凭证单渠道凭证文件 | 服务凭证配置（apiKey / productId / 鉴权中心地址）从环境变量迁往**凭证文件**（`auth-center.credential.json`）：签发/轮换响应在客户端拼装下载，全量明文，唯一渠道（契约见 kit `docs/credential-file.md`）；kit `authCenterFacet`（`AUTH_CENTER_*`）随之退役。admin 下载证书端点作为孤立面一并移除——服务端只存 hash，任何端点均无明文补发路径 |
 
 ### v1.6
 
@@ -185,7 +191,7 @@
 
 ## 5. 安全与最小化约束
 
-1. `token`（secret）仅在 `issue` 响应中返回一次；其余端点任何响应不得包含 secret 明文或可反推出 secret 的信息（admin 下载证书亦不含明文）。
+1. `token`（secret）仅在签发 / 轮换（admin 通道）响应中返回一次；其余端点任何响应不得包含 secret 明文或可反推出 secret 的信息。消费方凭证文件（kit `docs/credential-file.md`）由该响应在客户端拼装，服务端只存 hash，无补发路径。
 2. 除本契约声明字段外，不得携带其他信息（最小化；匿名视图仅返回 `publicClaims` 声明公开的字段）。
 3. 新增字段只允许为可选字段，且不得改变既有字段的类型与语义（向前兼容）。
 4. `claims` 中禁止出现嵌套对象 / 数组（`redirectUris` 除外），保证各语言消费方解析无歧义。

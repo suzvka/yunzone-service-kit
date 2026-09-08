@@ -36,7 +36,6 @@ export {
 } from "./deploy";
 export {
   deploymentFacet,
-  authCenterFacet,
   userCenterFacet,
   adminFacet,
   composeFacets,

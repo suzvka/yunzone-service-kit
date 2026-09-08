@@ -1,9 +1,11 @@
 /**
- * 鉴权中心对接（契约 + 客户端执行层）
+ * 鉴权中心对接（契约 + 客户端执行层 + 凭证文件）
  *
  * - token-contract：端点 / 请求 / 响应 / 错误码契约（单一事实源 docs/token-contract.md）
  * - client：官方通信实现（消费方策略——探活节奏 / 降级 / 身份映射——由消费方实现）
+ * - credential-file：凭证文件加载（服务凭证唯一配置渠道，单一事实源 docs/credential-file.md）
  */
 export * from "./token-contract";
 export * from "./client";
 export * from "./errors";
+export * from "./credential-file";

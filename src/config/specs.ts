@@ -14,8 +14,9 @@
  *   - 项目私有命名空间（服务自有 schema 扩展）：自由命名，但不得占用平台注入命名空间；
  *   - 裸读禁令：禁止直接 process.env.COZE_* 裸读平台注入变量，必须经中立键
  *     （通用契约 + deploymentAliases / normalizeDeployEnv）或自有 schema 显式声明接入。
- * - 鉴权中心三要素规范名为 AUTH_CENTER_*。
  * - 管理面语义：ADMIN_PASSWORD 未设置 = 管理后台禁用（503），禁止默认密码回退。
+ * - 鉴权中心服务凭证不走环境变量：唯一渠道是凭证文件（见 /auth 的 loadAuthCenterCredential，
+ *   authCenterFacet 已退役）。
  */
 
 import { z } from "zod";
@@ -32,13 +33,6 @@ export const deploymentFacet = z.object({
   HOSTNAME: z.string().optional(),
   PORT: z.string().optional(),
   WORKSPACE_PATH: z.string().optional(),
-});
-
-/** ── 鉴权中心面（Token Authority Service）：规范名 AUTH_CENTER_* ── */
-export const authCenterFacet = z.object({
-  AUTH_CENTER_URL: z.string().optional(),
-  AUTH_CENTER_API_KEY: z.string().optional(),
-  AUTH_CENTER_PRODUCT_ID: z.string().optional(),
 });
 
 /** ── 用户中心面：仅服务端 URL；浏览器侧由服务端经运行时接口下发，不提供 NEXT_PUBLIC_ 内联通道 ── */

@@ -52,14 +52,12 @@ const status = await registry.getStatus(); // { registeredCount, availableCount,
 | 分面 | 变量 | 说明 |
 |------|------|------|
 | `deploymentFacet` | `DEPLOY_ENV`、`PROJECT_DOMAIN_DEFAULT`、`PUBLIC_BASE_URL`、`DEPLOY_PROVIDER`、`HOSTNAME`、`PORT`、`WORKSPACE_PATH` | 部署面（中立键，TICKET-001） |
-| `authCenterFacet` | `AUTH_CENTER_URL`、`AUTH_CENTER_API_KEY`、`AUTH_CENTER_PRODUCT_ID` | 鉴权中心三要素（规范名） |
 | `userCenterFacet` | `USER_CENTER_URL`、`USER_CENTER_API_KEY`（预留） | 用户中心服务端地址与凭证 |
 | `adminFacet` | `ADMIN_PASSWORD`、`ADMIN_PATH`（默认 `/admin`）、`ADMIN_USERNAME`（可选，启用双凭证）、`ADMIN_SESSION_MAX_AGE`（可选，默认 `86400`） | 管理后台；**未设置密码 = 禁用（503）** |
 
 ```ts
 import {
   adminFacet,
-  authCenterFacet,
   composeFacets,
   deploymentFacet,
   requiredFacet,
@@ -67,16 +65,14 @@ import {
 } from "yunzone-service-kit/config";
 
 // 组合分面
-const envSchema = composeFacets(deploymentFacet, authCenterFacet, userCenterFacet, adminFacet);
+const envSchema = composeFacets(deploymentFacet, userCenterFacet, adminFacet);
 
-// 模块级必填
-const authCenterEnvSchema = requiredFacet(authCenterFacet, [
-  "AUTH_CENTER_URL",
-  "AUTH_CENTER_API_KEY",
-  "AUTH_CENTER_PRODUCT_ID",
-]);
-const env = loadEnv(authCenterEnvSchema);
+// 模块级必填（如管理后台密码）
+const adminEnvSchema = requiredFacet(adminFacet, ["ADMIN_PASSWORD"]);
+const env = loadEnv(adminEnvSchema);
 ```
+
+> 鉴权中心服务凭证不走环境变量：`authCenterFacet` 已退役，唯一渠道是凭证文件（见 `/auth` 的 `loadAuthCenterCredential`）。
 
 **aliases 选项**：`loadEnv(schema, { aliases })` 支持规范 key 未设置时回退别名（通用机制；诊断快照只列规范名、不回显值）。平台注入适配（TICKET-001）用预构建的 `deploymentAliases` 常量——**永久机制**（平台注入变量名不可改名，适配层在读取时回退，禁止服务代码裸读）：
 
@@ -184,7 +180,7 @@ import { facetKeys } from "yunzone-service-kit/config";
 const reporter = createOpsReporter({ name: "user-center", version: "1.2.3" });
 reporter.addRegistry("captcha", captchaRegistry);
 reporter.addSection("apiHeat", () => heatCounter.snapshot()); // 形状由宿主定义
-reporter.setEnvKeys(facetKeys(envSchema)); // 或手写白名单 ["AUTH_CENTER_URL", "DEPLOY_ENV"]
+reporter.setEnvKeys(facetKeys(envSchema)); // 或手写白名单 ["DEPLOY_ENV", "ADMIN_PASSWORD"]
 
 export async function GET() {
   return Response.json(await reporter.report());
@@ -237,6 +233,26 @@ Token Authority Service（鉴权中心）对接：**契约副本 + 官方通信�
   - `healthz()`：探活，可用（2xx）返回 `true`，不可达 / 非 2xx 一律 `false`（不抛错）
 - `AuthCenterError`：协议层失败（网络 / 超时 / 非 2xx / 响应体非法）统一归一化；响应体可解析出服务端错误码时保留至 `error.code`
 - **职责边界**：kit 只封装通信协议；探活节奏、降级回退、claims → 业务身份映射等策略由消费方实现
+
+**凭证文件（服务凭证唯一配置渠道，详见 [docs/credential-file.md](docs/credential-file.md)）**：
+
+服务凭证（apiKey / productId / 服务地址）不进环境变量。签发或轮换凭证时从鉴权中心管理后台一次性下载凭证文件（明文 apiKey 仅存在于签发/轮换响应，服务端只存 hash，事后无补发路径），放置到服务目录并加入 `.gitignore`：
+
+```ts
+import { createAuthCenterClient, loadAuthCenterCredential } from "yunzone-service-kit/auth";
+
+// 默认读 <cwd>/auth-center.credential.json；缺失即抛 CredentialFileError（fail-fast）
+const credential = loadAuthCenterCredential();
+
+const client = createAuthCenterClient({
+  baseUrl: credential.authCenterUrl,
+  apiKey: credential.apiKey,
+});
+```
+
+- 文件含明文 apiKey：加载时做启发式检查，疑似被 git 跟踪时 `console.warn` 一次（提示非保证）
+- 文件内 `expiresAt` 仅为签发时快照（auto-renew 场景会失真），仅供展示；运行时有效性以 introspect 为准
+- 轮换后旧文件立即失效（introspect 返回 `active: false`），需重新下载凭证文件
 
 ### `/points` — 积分服务契约与客户端
 

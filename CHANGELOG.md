@@ -2,6 +2,25 @@
 
 > **记录边界**：本日志只记录 kit 自身的契约 / 实现 / 兼容性变更。消费方（下游服务）的内部迁移细节、文件清单、依赖版本对齐一律不记——那是反向依赖：下游一改，本日志立刻变成错误信息源。需要表述下游影响时，只以「兼容性 / 升级提示」的中立形式写 kit 侧的行为约束，必要时点名**角色**（鉴权中心、用户中心、宿主应用）而不点名具体仓库。
 
+## 0.26.0 — 2026-09-09
+
+服务凭证配置迁移到单渠道**凭证文件**：鉴权中心服务凭证（apiKey / productId / 服务地址）不再走环境变量，`authCenterFacet` 退役，`/auth` 新增凭证文件加载面。
+
+### 新增
+
+- **`/auth` 凭证文件加载**：`loadAuthCenterCredential(options?)` 读取 `auth-center.credential.json`（默认 `<cwd>/`，`path` 可指定，`optional: true` 时缺失降级为 `null`），返回三要素（`authCenterUrl` 尾部斜杠归一化 / `apiKey` / `productId`，附 `clientId` / `name` / `expiresAt` 签发快照）与 `sourcePath`；缺失（默认）/ 非法 JSON / 字段校验失败抛 `CredentialFileError`，**不回显凭证值**
+- **`.gitignore` 启发式检查**：加载时从文件位置向上找最近 `.git`，凭证文件疑似被 git 跟踪时 `console.warn` 一次（启发式子集：精确名 / `*` 通配 / 目录前缀；提示非保证，防泄漏以 `.gitignore` 维护约定为准）
+
+### 移除（破坏性）
+
+- **`authCenterFacet` 导出移除**：`AUTH_CENTER_URL` / `AUTH_CENTER_API_KEY` / `AUTH_CENTER_PRODUCT_ID` 退出集群契约面。私有 schema 组合了该面的消费方（`composeFacets` / `requiredFacet`）须删除对应声明，鉴权中心客户端配置改用 `loadAuthCenterCredential`
+
+### 兼容性 / 升级提示
+
+- 凭证文件由鉴权中心管理后台在**签发/轮换时刻**从响应体客户端拼装下载（明文 apiKey 全量携带）；服务端只存 hash，**无任何补发路径**，丢件即重签。下载后放置到服务目录并加入 `.gitignore`
+- 文件内 `expiresAt` 为签发时快照（auto-renew 场景会失真），仅供展示；运行时有效性以 introspect 为准。refresh / 自动续期不改令牌值，文件持续有效；轮换后旧文件立即失效（introspect 返回 `active: false`）
+- 契约单一事实源：[docs/credential-file.md](docs/credential-file.md)（内含未来整文件加密的信封预留，内层 schema 不变）
+
 ## 0.25.0 — 2026-09-06
 
 `/points` 契约扩展 **deposit**（算力报酬存入）。生态循环的产出侧：infer 控制面将算力提供者积累的内部台账汇总后存入平台积分账户，与 deduct（消费侧）共同构成完整积分生命周期。

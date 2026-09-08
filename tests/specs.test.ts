@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   adminFacet,
-  authCenterFacet,
   composeFacets,
   deploymentAliases,
   deploymentFacet,
@@ -19,9 +18,9 @@ import {
 } from "../src/config";
 
 afterEach(() => {
-  delete process.env.AUTH_CENTER_URL;
-  delete process.env.AUTH_CENTER_API_KEY;
-  delete process.env.AUTH_CENTER_PRODUCT_ID;
+  delete process.env.USER_CENTER_URL;
+  delete process.env.USER_CENTER_API_KEY;
+  delete process.env.ADMIN_PASSWORD;
   delete process.env.DEPLOY_ENV;
   delete process.env.PROJECT_DOMAIN_DEFAULT;
   delete process.env.PUBLIC_BASE_URL;
@@ -36,20 +35,20 @@ afterEach(() => {
 
 describe("composeFacets", () => {
   it("组合多个分面并保留字段", () => {
-    const schema = composeFacets(deploymentFacet, authCenterFacet, adminFacet);
+    const schema = composeFacets(deploymentFacet, userCenterFacet, adminFacet);
     const keys = facetKeys(schema);
     expect(keys).toContain("DEPLOY_ENV");
-    expect(keys).toContain("AUTH_CENTER_URL");
+    expect(keys).toContain("USER_CENTER_URL");
     expect(keys).toContain("ADMIN_PASSWORD");
     expect(keys).toContain("ADMIN_PATH");
   });
 
   it("组合结果可被 loadEnv 解析且类型收敛", () => {
-    process.env.AUTH_CENTER_URL = "https://auth.example.com";
-    const schema = composeFacets(authCenterFacet, userCenterFacet);
+    process.env.USER_CENTER_URL = "https://uc.example.com";
+    const schema = composeFacets(userCenterFacet, adminFacet);
     const env = loadEnv(schema);
-    expect(env.AUTH_CENTER_URL).toBe("https://auth.example.com");
-    expect(env.USER_CENTER_URL).toBeUndefined();
+    expect(env.USER_CENTER_URL).toBe("https://uc.example.com");
+    expect(env.ADMIN_PASSWORD).toBeUndefined();
   });
 
   it("重复 key 直接抛错（防止静默覆盖）", () => {
@@ -64,43 +63,32 @@ describe("composeFacets", () => {
 
 describe("requiredFacet", () => {
   it("必填 key 存在且非空时通过", () => {
-    process.env.AUTH_CENTER_URL = "https://auth.example.com";
-    process.env.AUTH_CENTER_API_KEY = "sk-client-abc";
-    process.env.AUTH_CENTER_PRODUCT_ID = "wanyanai";
-
-    const schema = requiredFacet(authCenterFacet, [
-      "AUTH_CENTER_URL",
-      "AUTH_CENTER_API_KEY",
-      "AUTH_CENTER_PRODUCT_ID",
-    ]);
+    process.env.ADMIN_PASSWORD = "admin-pass";
+    const schema = requiredFacet(adminFacet, ["ADMIN_PASSWORD"]);
     const env = loadEnv(schema);
-    expect(env.AUTH_CENTER_URL).toBe("https://auth.example.com");
+    expect(env.ADMIN_PASSWORD).toBe("admin-pass");
   });
 
   it("必填 key 缺失时 loadEnv 抛 EnvConfigError 且快照不回显值", () => {
-    process.env.AUTH_CENTER_URL = "https://auth.example.com";
-    const schema = requiredFacet(authCenterFacet, [
-      "AUTH_CENTER_URL",
-      "AUTH_CENTER_API_KEY",
-      "AUTH_CENTER_PRODUCT_ID",
-    ]);
+    process.env.ADMIN_PASSWORD = "admin-pass";
+    const schema = requiredFacet(adminFacet, ["ADMIN_PASSWORD", "ADMIN_USERNAME"]);
 
     expect(() => loadEnv(schema)).toThrowError(EnvConfigError);
     try {
       loadEnv(schema);
     } catch (err) {
       const message = (err as Error).message;
-      expect(message).toContain("AUTH_CENTER_URL=***set***");
-      expect(message).toContain("AUTH_CENTER_API_KEY=(unset)");
+      expect(message).toContain("ADMIN_PASSWORD=***set***");
+      expect(message).toContain("ADMIN_USERNAME=(unset)");
       // 不回显任何变量值
-      expect(message).not.toContain("https://auth.example.com");
+      expect(message).not.toContain("admin-pass");
     }
   });
 
   it("空字符串视为未设置", () => {
-    process.env.AUTH_CENTER_URL = "";
-    const schema = requiredFacet(authCenterFacet, ["AUTH_CENTER_URL"]);
-    expect(() => loadEnv(schema)).toThrowError(/AUTH_CENTER_URL.*required but unset/);
+    process.env.ADMIN_PASSWORD = "";
+    const schema = requiredFacet(adminFacet, ["ADMIN_PASSWORD"]);
+    expect(() => loadEnv(schema)).toThrowError(/ADMIN_PASSWORD.*required but unset/);
   });
 });
 
@@ -170,11 +158,10 @@ describe("facetKeys", () => {
   });
 
   it("requiredFacet 包装后仍可提取（superRefine 返回 this）", () => {
-    const schema = requiredFacet(authCenterFacet, ["AUTH_CENTER_URL"]);
+    const schema = requiredFacet(userCenterFacet, ["USER_CENTER_URL"]);
     expect(facetKeys(schema).sort()).toEqual([
-      "AUTH_CENTER_API_KEY",
-      "AUTH_CENTER_PRODUCT_ID",
-      "AUTH_CENTER_URL",
+      "USER_CENTER_API_KEY",
+      "USER_CENTER_URL",
     ]);
   });
 });
