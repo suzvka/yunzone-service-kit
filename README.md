@@ -8,7 +8,6 @@
 **对象存储抽象**（`/storage`）
 **运维数据接口与管理后台认证**（`/ops`）
 **鉴权中心契约与客户端**（`/auth`）
-**积分服务契约与客户端**（`/points`）
 **应用目录契约**（`/app`）
 
 纯逻辑层零框架耦合，任何 Node 服务可直接引用。Next.js 路由适配层拆为独立入口（`/ops/next`、`/app/next`；`next` 为 optional peerDependency），不引入这些子路径即不产生框架依赖。
@@ -18,7 +17,7 @@
 ### `/core` — 共享原语
 
 集群共用的基础形状：
-- `KitError`：领域错误统一基类，提供 `code`（默认取类名）/ `cause` / `toJSON()`（结构化日志用，不泄露堆栈）。各领域错误族（`StorageError` / `ObjectStoreError` / `AuthCenterError` / `PointsServiceError` / `AppManifestError`）均继承它，消费方按类 catch，不依赖字符串匹配
+- `KitError`：领域错误统一基类，提供 `code`（默认取类名）/ `cause` / `toJSON()`（结构化日志用，不泄露堆栈）。各领域错误族（`StorageError` / `ObjectStoreError` / `AuthCenterError` / `AppManifestError`）均继承它，消费方按类 catch，不依赖字符串匹配
 - `LifecycleAware`：`init?()` / `disconnect?()` 钩子形状，由组合根统一调度（`SqlDb` / `ObjectStore` 均继承）
 
 ### `/registry` — 泛型 Provider 注册中心基座
@@ -52,8 +51,9 @@ const status = await registry.getStatus(); // { registeredCount, availableCount,
 | 分面 | 变量 | 说明 |
 |------|------|------|
 | `deploymentFacet` | `DEPLOY_ENV`、`PROJECT_DOMAIN_DEFAULT`、`PUBLIC_BASE_URL`、`DEPLOY_PROVIDER`、`HOSTNAME`、`PORT`、`WORKSPACE_PATH` | 部署面（中立键，TICKET-001） |
-| `userCenterFacet` | `USER_CENTER_URL`、`USER_CENTER_API_KEY`（预留） | 用户中心服务端地址与凭证 |
 | `adminFacet` | `ADMIN_PASSWORD`、`ADMIN_PATH`（默认 `/admin`）、`ADMIN_USERNAME`（可选，启用双凭证）、`ADMIN_SESSION_MAX_AGE`（可选，默认 `86400`） | 管理后台；**未设置密码 = 禁用（503）** |
+
+> `userCenterFacet`（`USER_CENTER_URL` / `USER_CENTER_API_KEY`）已于 0.28.0 退役：计量与定价上移平台计量域后全集群无消费者。
 
 ```ts
 import {
@@ -61,11 +61,10 @@ import {
   composeFacets,
   deploymentFacet,
   requiredFacet,
-  userCenterFacet,
 } from "yunzone-service-kit/config";
 
 // 组合分面
-const envSchema = composeFacets(deploymentFacet, userCenterFacet, adminFacet);
+const envSchema = composeFacets(deploymentFacet, adminFacet);
 
 // 模块级必填（如管理后台密码）
 const adminEnvSchema = requiredFacet(adminFacet, ["ADMIN_PASSWORD"]);
@@ -253,15 +252,6 @@ const client = createAuthCenterClient({
 - 文件含明文 apiKey：加载时做启发式检查，疑似被 git 跟踪时 `console.warn` 一次（提示非保证）
 - 文件内 `expiresAt` 仅为签发时快照（auto-renew 场景会失真），仅供展示；运行时有效性以 introspect 为准
 - 轮换后旧文件立即失效（introspect 返回 `active: false`），需重新下载凭证文件
-
-### `/points` — 积分服务契约与客户端
-
-用户中心积分账本对接（账本本体——余额 / 复式流水 / 幂等约束——由用户中心持有）：
-
-- 契约面：`POINTS_ENDPOINTS`（balance / deduct）+ 各端点请求/响应类型
-- `createPointsClient({ baseUrl, apiKey?, timeoutMs? })`：`balance(request)` / `deduct(request)`；业务结果（余额不足 / `duplicate` / `ok: false`）正常返回**不抛错**
-- **幂等语义（扣款安全的核心）**：`requestId` 为幂等键，服务端以流水 UNIQUE 约束保证同一 `requestId` 至多实扣一次；重复请求返回 `duplicate: true` 且不视为失败。`deduct` 抛 `PointsServiceError` 时服务端状态不可确知（可能已入账），调用方**可用同一 `requestId` 安全重试**
-- 重试 / 退避策略由消费方按业务时序决定，kit 不代持
 
 ### `/app` — 应用目录契约（AppManifest v1）
 

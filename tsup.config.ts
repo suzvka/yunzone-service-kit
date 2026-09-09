@@ -11,7 +11,6 @@ export default defineConfig({
     "src/ops/index.ts",
     "src/ops/next.ts",
     "src/auth/index.ts",
-    "src/points/index.ts",
     "src/app/index.ts",
     "src/app/next.ts",
   ],

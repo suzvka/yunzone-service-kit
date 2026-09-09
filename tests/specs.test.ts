@@ -14,12 +14,9 @@ import {
   facetKeys,
   loadEnv,
   requiredFacet,
-  userCenterFacet,
 } from "../src/config";
 
 afterEach(() => {
-  delete process.env.USER_CENTER_URL;
-  delete process.env.USER_CENTER_API_KEY;
   delete process.env.ADMIN_PASSWORD;
   delete process.env.DEPLOY_ENV;
   delete process.env.PROJECT_DOMAIN_DEFAULT;
@@ -35,19 +32,19 @@ afterEach(() => {
 
 describe("composeFacets", () => {
   it("组合多个分面并保留字段", () => {
-    const schema = composeFacets(deploymentFacet, userCenterFacet, adminFacet);
+    const schema = composeFacets(deploymentFacet, adminFacet);
     const keys = facetKeys(schema);
     expect(keys).toContain("DEPLOY_ENV");
-    expect(keys).toContain("USER_CENTER_URL");
+    expect(keys).toContain("WORKSPACE_PATH");
     expect(keys).toContain("ADMIN_PASSWORD");
     expect(keys).toContain("ADMIN_PATH");
   });
 
   it("组合结果可被 loadEnv 解析且类型收敛", () => {
-    process.env.USER_CENTER_URL = "https://uc.example.com";
-    const schema = composeFacets(userCenterFacet, adminFacet);
+    process.env.DEPLOY_ENV = "production";
+    const schema = composeFacets(deploymentFacet, adminFacet);
     const env = loadEnv(schema);
-    expect(env.USER_CENTER_URL).toBe("https://uc.example.com");
+    expect(env.DEPLOY_ENV).toBe("production");
     expect(env.ADMIN_PASSWORD).toBeUndefined();
   });
 
@@ -158,10 +155,12 @@ describe("facetKeys", () => {
   });
 
   it("requiredFacet 包装后仍可提取（superRefine 返回 this）", () => {
-    const schema = requiredFacet(userCenterFacet, ["USER_CENTER_URL"]);
+    const schema = requiredFacet(adminFacet, ["ADMIN_PASSWORD"]);
     expect(facetKeys(schema).sort()).toEqual([
-      "USER_CENTER_API_KEY",
-      "USER_CENTER_URL",
+      "ADMIN_PASSWORD",
+      "ADMIN_PATH",
+      "ADMIN_SESSION_MAX_AGE",
+      "ADMIN_USERNAME",
     ]);
   });
 });

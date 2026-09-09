@@ -17,6 +17,9 @@
  * - 管理面语义：ADMIN_PASSWORD 未设置 = 管理后台禁用（503），禁止默认密码回退。
  * - 鉴权中心服务凭证不走环境变量：唯一渠道是凭证文件（见 /auth 的 loadAuthCenterCredential，
  *   authCenterFacet 已退役）。
+ * - 用户中心面 `userCenterFacet`（`USER_CENTER_URL` / `USER_CENTER_API_KEY`）已于 0.28.0 退役：
+ *   计量与定价上移平台计量域后全集群无消费者（预留的 API_KEY 键自接入以来从未被读）。
+ *   产品若需引用用户中心地址，在自己的私有 schema 里显式声明，不再由通用契约承载。
  */
 
 import { z } from "zod";
@@ -33,13 +36,6 @@ export const deploymentFacet = z.object({
   HOSTNAME: z.string().optional(),
   PORT: z.string().optional(),
   WORKSPACE_PATH: z.string().optional(),
-});
-
-/** ── 用户中心面：仅服务端 URL；浏览器侧由服务端经运行时接口下发，不提供 NEXT_PUBLIC_ 内联通道 ── */
-export const userCenterFacet = z.object({
-  USER_CENTER_URL: z.string().optional(),
-  /** 预留：用户中心服务端凭证（当前集群暂无消费者） */
-  USER_CENTER_API_KEY: z.string().optional(),
 });
 
 /** ── 管理面：ADMIN_PASSWORD 未设置 = 管理后台禁用（503），禁止默认密码回退 ── */

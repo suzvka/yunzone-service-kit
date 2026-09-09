@@ -1,8 +1,9 @@
 /**
  * Token Authority Service 契约（服务凭证 / 用户 Token 共享端点）
  *
- * 单一事实源：docs/token-contract.md（共识版 v1.6：登记表为纯 token 存储，
- * 业务用户 token 不再做 accountId 账户锚定，无身份票据 / isPlatform 豁免）。
+ * 单一事实源：docs/token-contract.md（共识版 v1.8：登记表为纯 token 存储，
+ * 业务用户 token 不做 accountId 账户锚定，无身份票据 / isPlatform 豁免；
+ * accountId 不再承载扣款语义）。
  * 消费方（用户中心 / WanyanAI）按本模块类型对接鉴权中心 /api/v1/token/*，
  * 字段命名与鉴权中心实现一致（camelCase）。
  */
@@ -68,7 +69,7 @@ export interface TokenIssueRequest {
   claims?: Record<string, unknown>;
   /** 有效秒数；不填 = 不设过期时间（永不过期，响应 expiresAt 为 null） */
   ttl?: number;
-  /** 可公开的自定义声明（匿名 introspect 返回）；账户锚点 accountId 由调用方自报于此 */
+  /** 可公开的自定义声明（匿名 introspect 返回）；`accountId` 可自报于此，但仅属透传标识，不得作扣款/发放依据（v1.8） */
   publicClaims?: Record<string, unknown>;
   /** tag 是否可公开（默认 false = 最小暴露） */
   publicTag?: boolean;

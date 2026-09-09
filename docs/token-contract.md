@@ -1,13 +1,19 @@
-# Token Authority 服务契约（共识版 v1.7）
+# Token Authority 服务契约（共识版 v1.8）
 
-> 版本：v1.7（2026-09）
-> 来源：用户中心「服务凭证（Service Credential）证书契约需求单 v1.0」，经鉴权中心（yunzone_auth）与消费方（yunzone_user_center / WanyanAI）评审修订；v1.4 新增「accountId 账户锚定」与「身份票据」契约；v1.5 结算 P1 事故（UC-TICKET-20260902-001）；v1.6 登记表去账户化——鉴权中心还原为纯 token 存储，业务用户 token 不再做 accountId 账户锚定，移除身份票据 / isPlatform 豁免，账户背书与支付风控归消费方与积分域。
+> 版本：v1.8（2026-09）
+> 来源：用户中心「服务凭证（Service Credential）证书契约需求单 v1.0」，经鉴权中心（yunzone_auth）与消费方（yunzone_user_center / WanyanAI）评审修订；v1.4 新增「accountId 账户锚定」与「身份票据」契约；v1.5 结算 P1 事故（UC-TICKET-20260902-001）；v1.6 登记表去账户化——鉴权中心还原为纯 token 存储，业务用户 token 不再做 accountId 账户锚定，移除身份票据 / isPlatform 豁免，v1.8 撤销该归位：积分域已退场，自报 accountId 不再承载支付语义。
 > 单一事实源：本文件 + [src/auth/token-contract.ts](../src/auth/token-contract.ts) 类型定义。
 > 适用范围：Token Authority Service（鉴权中心）与宿主应用之间的服务凭证签发 / 校验 / 续期 / 吊销接口契约。
 
 ---
 
-## 0. 修订记录（v1.0 → v1.7）
+## 0. 修订记录（v1.0 → v1.8）
+
+### v1.8
+
+| # | 修订点 | 决策 |
+|---|---|---|
+| 31 | accountId 不再承载扣款语义 | 此前 §5.6 / §5.7 把 `publicClaims.accountId` 的公开性与风控归属均论证为“跨产品扣款/计费锚定”，并交由**积分域风控**兜底。随集群内积分逻辑整体退场（计量与定价上移平台计量域），该前提已不存在：**字段本身、其存储与公开行为均不变（不破既有签发与 introspect 形状），但任何消费方不得再拿自报的 accountId 作扣款或发放依据**。需可信主体时一律用鉴权中心签发的 `productId`；未来的计量契约应自定其对手方形状，不得沿用本字段 |
 
 ### v1.7
 
@@ -160,11 +166,14 @@
 
 ### 3.5 业务用户 token 与 accountId（v1.6：登记表去账户化）
 
+> ⚠️ **v1.8 适用面限定**：本节描述的 accountId 仍按原样存储与公开，但它**不再是扣款参考**——
+> 自报值不可校验，而积分账本与产品侧结算已退场（参 §0 v1.8 与 kit CHANGELOG 0.28.0）。
+
 - **判定**：请求体 `claims.type` 未声明的签发即业务用户 token 签发（`claims.type` 为白名单机制，未知值直接 400）。
-- **accountId**：平台统一账户 id，值空间 = user_center OAuth `sub` = `point_account.user_id`（同一账户空间，消费方直接用作积分账本主键）。
+- **accountId**：签发产品自报的账户标识，历史值空间 = 平台 OAuth `sub`。登记表不保证它属于调用方，**不保证它存在于任何账户体系**（v1.8：不再承诺可用作账本主键）。
 - **登记表纯存储**：签发成功时登记表将调用方提交的 `claims`/`publicClaims` 原样落库，**不注入、不覆盖、不校验 accountId**，也不强制 `userId === accountId`。账户锚点 `accountId` 由调用方（产品）自报进 `publicClaims.accountId`。
-- **公开可解析**：`publicClaims.accountId` 使匿名 introspect 亦能解析账户锚点（跨产品计费锚定所必需），与 name/email 等 PII 完全分离（PII 仅存私有 claims）。
-- **账户背书与支付风控归位**：登记表不再判定"谁能声明哪个 accountId"。账户身份以平台 OAuth `userinfo.sub` 为准；防止产品伪造 accountId 非法扣费由**积分域风控**在结算边界兜底（限额 / 速率 / 账户↔产品授权），不在 token 签发层设限。历史 v1.4/v1.5 的 `identityTicket` / `evidenceToken` / `isPlatform` 豁免机制整体退役。
+- **公开可解析**：`publicClaims.accountId` 对匿名 introspect 亦可见（v1.6 时为了跨产品扣款锚定而设；v1.8 后仅作为展示/关联用途的透传字段，不因此产生新义务），与 name/email 等 PII 完全分离（PII 仅存私有 claims）。
+- **账户背书不再由谁提供**：登记表不判定“谁能声明哪个 accountId”；而历史上接手风控的“积分域”已退场，因此 v1.8 的结论是：**自报 accountId 上没有可信的支付语义，不得在其上做扣款/发放判定**。历史 v1.4/v1.5 的 `identityTicket` / `evidenceToken` / `isPlatform` 豁免机制已整体退役，不得重建。
 
 ---
 
@@ -196,8 +205,8 @@
 3. 新增字段只允许为可选字段，且不得改变既有字段的类型与语义（向前兼容）。
 4. `claims` 中禁止出现嵌套对象 / 数组（`redirectUris` 除外），保证各语言消费方解析无歧义。
 5. 产品隔离：真实凭证调用方只能签发 / 续期 / 吊销自己 productId 下的凭证；introspect 产品不匹配时降级为匿名视图。
-6. **账户锚点公开、PII 私有**：业务用户 token 的 `publicClaims.accountId`（平台账户锚点，调用方自报）对匿名视图公开（跨产品扣款锚定所必需）；name / email / 手机号等 PII 一律只允许出现在私有 `claims`，不得进入 `publicClaims`。
-7. **支付风控归积分域**：登记表不校验 accountId 归属；防止产品伪造 accountId 非法扣费由积分域风控在结算边界兜底（限额 / 速率 / 账户↔产品授权），非 token 签发层职责。
+6. **公开字段不得携带 PII**：`publicClaims` 对匿名视图公开，因此只允许非敏感的标识与展示字段（`accountId` 作为调用方自报的透传标识保留）；name / email / 手机号等 PII 一律只允许出现在私有 `claims`，不得进入 `publicClaims`。
+7. **token 层不做支付担保**：登记表不校验 accountId 归属，也不为任何金额操作提供可信主体。需可信对手方时用鉴权中心签发的 `productId`；计量与风控归平台计量域，不回填 token 签发层（v1.8）。
 
 ---
 
