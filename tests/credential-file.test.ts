@@ -1,8 +1,9 @@
 /**
- * 鉴权中心凭证文件加载（credential-file）— 单元测试
+ * 产品凭证文件加载（credential-file）— 单元测试
  *
  * 覆盖：有效文件三要素解析（含尾部斜杠归一化）、单渠道 fail-fast 语义、
  * 非法内容 / 缺字段校验（不回显凭证值）、相对路径默认行为、
+ * product / productCenter 可选段装配（整段齐备性、旧文件兼容）、
  * .gitignore 启发式提示的三态（无 .git / 未覆盖 / 已覆盖）。
  */
 
@@ -69,6 +70,47 @@ describe("loadAuthCenterCredential", () => {
     });
   });
 
+  it("产品凭证文件（含 product / productCenter 段）→ 整段装配 + 尾部斜杠归一化", () => {
+    const filePath = writeCredential({
+      ...validFile,
+      product: { id: "e7bf14c7-0456-4851-b500-85521a0ba19c", name: "万言AI" },
+      productCenter: { baseUrl: "https://pc.example.com/", apiKey: "sk-pc-test" },
+    });
+    const cred = loadAuthCenterCredential({ path: filePath });
+    expect(cred.product).toEqual({
+      id: "e7bf14c7-0456-4851-b500-85521a0ba19c",
+      name: "万言AI",
+    });
+    expect(cred.productCenter).toEqual({
+      baseUrl: "https://pc.example.com",
+      apiKey: "sk-pc-test",
+    });
+  });
+
+  it("缺可选段（旧文件形态）→ product / productCenter 为 undefined", () => {
+    const filePath = writeCredential(validFile);
+    const cred = loadAuthCenterCredential({ path: filePath });
+    expect(cred.product).toBeUndefined();
+    expect(cred.productCenter).toBeUndefined();
+  });
+
+  it("product.id 为空 → CredentialFileError（段内齐备性校验）", () => {
+    const filePath = writeCredential({ ...validFile, product: { id: "" } });
+    expect(() => loadAuthCenterCredential({ path: filePath })).toThrowError(
+      CredentialFileError
+    );
+  });
+
+  it("productCenter 缺 apiKey → CredentialFileError", () => {
+    const filePath = writeCredential({
+      ...validFile,
+      productCenter: { baseUrl: "https://pc.example.com" },
+    });
+    expect(() => loadAuthCenterCredential({ path: filePath })).toThrowError(
+      CredentialFileError
+    );
+  });
+
   it("文件缺失 → 默认抛 CredentialFileError（单渠道 fail-fast）", () => {
     expect(() =>
       loadAuthCenterCredential({ path: join(dir, "absent.json") })
@@ -95,11 +137,6 @@ describe("loadAuthCenterCredential", () => {
       { authCenterUrl: "https://auth.example.com", client: { productId: "p" } },
       "apiKey",
     ],
-    [
-      "缺 client.productId",
-      { authCenterUrl: "https://auth.example.com", apiKey: "sk-client-test", client: {} },
-      "client.productId",
-    ],
   ])("%s → 校验失败且报字段路径、不回显凭证值", (_name, content, field) => {
     const filePath = writeCredential(content);
     try {
@@ -111,6 +148,17 @@ describe("loadAuthCenterCredential", () => {
       expect(message).toContain(field);
       expect(message).not.toContain("sk-client-test");
     }
+  });
+
+  it("去产品化：缺 client.productId 仍可加载（productId 随鉴权中心去产品化放宽为可选，DESIGN.md §4）", () => {
+    const filePath = writeCredential({
+      authCenterUrl: "https://auth.example.com",
+      apiKey: "sk-client-test",
+      client: {},
+    });
+    const credential = loadAuthCenterCredential({ path: filePath });
+    expect(credential.productId).toBeUndefined();
+    expect(credential.apiKey).toBe("sk-client-test");
   });
 
   it("无 options → 按 cwd 解析默认路径，缺失报错含默认文件名", () => {

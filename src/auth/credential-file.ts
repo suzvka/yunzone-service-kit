@@ -1,20 +1,29 @@
 /**
- * 鉴权中心凭证文件加载（单渠道）
+ * 产品凭证文件加载（单渠道交付物装配器）
  *
- * 集群约定：鉴权中心服务凭证（apiKey / productId / 服务地址）的唯一配置渠道是
- * **凭证文件**——签发或轮换凭证时从鉴权中心管理后台一次性下载（明文 apiKey 仅存在于
- * 签发/轮换响应，服务端只存 hash，事后无任何补发路径），放置到服务目录后由本模块加载。
- * 环境变量渠道（AUTH_CENTER_* 三要素）已随 authCenterFacet 退役，不再受支持。
+ * 集群约定：产品凭证文件是产品接入集群的**唯一配置交付物**——注册/轮换时由
+ * 签发方（产品中心）一次性下发（明文 apiKey 仅存在于签发/轮换响应，服务端只存
+ * hash，事后无任何补发路径），放置到服务目录后由本模块装配——等效于"自动填好
+ * 环境变量"：kit 只做形态校验与结构化装配，**不消费、不解释任何段的内容语义**，
+ * 各消费方按需取用自己关心的段。环境变量渠道（AUTH_CENTER_* 三要素）已随
+ * authCenterFacet 退役，不再受支持。
+ *
+ * 文件分段（段 = 各签发方的语义域；文件命名沿用合一时代的历史名）：
+ * - 鉴权段（顶层 authCenterUrl + apiKey）：yunzone_auth 服务凭证
+ *   （sk-auth-<id>.<key> 自编码，凭证 id 即签发者身份，DESIGN.md §4.2）；
+ * - 产品段（product，可选）：产品在产品中心的权威指代（product.id 轮换不变），
+ *   消费方据此自指（如 claims.productId、归属校验）；管理员凭证等非产品交付物无此段；
+ * - 产品中心段（productCenter，可选）：调产品中心 v1 的地址与 Bearer（sk-pc）；
+ * - client 段：签发响应原样携带的元数据（productId 为合一时代兼容字段）。
  *
  * 安全约定（与 /config 的 dotenv、envSnapshot 同哲学）：
  * - 文件含明文 apiKey，必须加入 .gitignore；本模块加载时做启发式检查并提示（非保证）；
  * - 错误信息只报文件路径与字段名，**绝不回显凭证值**；
- * - 文件内 expiresAt 仅为签发时快照（auto-renew 场景会过期失真），仅供展示，
- *   运行时有效性一律以 introspect 结果为准。
+ * - 文件内 expiresAt 仅为签发时快照，仅供展示，
+ *   运行时有效性一律以 introspect 结果为准（去产品化后新签发凭证恒无过期）。
  *
  * 未知字段一律忽略（向前兼容）：未来新增字段只允许可选，不改变既有字段语义。
  */
-
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
@@ -31,20 +40,36 @@ export class CredentialFileError extends Error {
 export const DEFAULT_CREDENTIAL_FILE = "auth-center.credential.json";
 
 /**
- * 凭证文件 schema（形态对齐签发/轮换响应体 + authCenterUrl）：
+ * 凭证文件 schema（形态对齐签发/轮换响应体 + authCenterUrl，分段语义见文件头）：
  * - 顶层 version / type / issuer / endpoints 为签发响应原样携带的元数据，加载器不消费；
- * - client.productId / apiKey / authCenterUrl 为三要素；
+ * - 鉴权段（authCenterUrl + apiKey）必填——文件至少承载一枚可用的鉴权凭证；
+ * - client.productId 为合一时代兼容字段（可选，新签发文件以 product.id 为权威指代）；
+ * - product / productCenter 为可选段（存在即整段装配，段内字段齐备性按段校验）；
  * - 未知字段被 zod 默认剥离（不报错），保证旧加载器读新文件不炸。
  */
 const credentialFileSchema = z.object({
   authCenterUrl: z.string().min(1, "不能为空"),
   apiKey: z.string().min(1, "不能为空"),
   client: z.object({
-    productId: z.string().min(1, "不能为空"),
+    productId: z.string().min(1, "不能为空").optional(),
     id: z.string().optional(),
     name: z.string().optional(),
     expiresAt: z.string().nullable().optional(),
   }),
+  /** 产品段（可选）：产品权威指代（product.id 轮换不变，产品中心独家权威） */
+  product: z
+    .object({
+      id: z.string().min(1, "不能为空"),
+      name: z.string().optional(),
+    })
+    .optional(),
+  /** 产品中心段（可选）：调产品中心 v1 的地址与 Bearer（sk-pc） */
+  productCenter: z
+    .object({
+      baseUrl: z.string().min(1, "不能为空"),
+      apiKey: z.string().min(1, "不能为空"),
+    })
+    .optional(),
 });
 
 /** loadAuthCenterCredential 选项 */
@@ -60,20 +85,24 @@ export interface LoadAuthCenterCredentialOptions {
   optional?: boolean;
 }
 
-/** 鉴权中心凭证（从凭证文件加载，消费方据此装配 createAuthCenterClient） */
+/** 产品凭证（从凭证文件装配，消费方按需取用各段） */
 export interface AuthCenterCredential {
   /** 鉴权中心基础地址（尾部斜杠已归一化） */
   authCenterUrl: string;
-  /** 服务凭证（Bearer，明文 sk-client- 前缀） */
+  /** 服务凭证（Bearer，明文；去产品化后为 sk-auth-<id>.<key> 自编码格式） */
   apiKey: string;
-  /** 凭证归属产品 ID */
-  productId: string;
-  /** 凭证唯一标识（= tokenHash，签发响应 client.id） */
+  /** 凭证归属产品 ID（合一时代兼容字段，可选；权威指代见 product.id） */
+  productId?: string;
+  /** 凭证唯一标识（签发响应 client.id，新模型 = credentials.id） */
   clientId?: string;
   /** 凭证名称 */
   name?: string;
-  /** 签发时快照的过期时间；仅供展示，运行时有效性以 introspect 为准 */
+  /** 签发时快照的过期时间；仅供展示，运行时有效性以 introspect 为准（新模型恒 null） */
   expiresAt?: string | null;
+  /** 产品段（文件含 product 段时装配）：产品权威指代，product.id 轮换不变 */
+  product?: { id: string; name?: string };
+  /** 产品中心段（文件含 productCenter 段时装配）：调产品中心 v1 的地址与 Bearer */
+  productCenter?: { baseUrl: string; apiKey: string };
   /** 凭证文件绝对路径（诊断用，不含凭证值） */
   sourcePath: string;
 }
@@ -146,6 +175,13 @@ export function loadAuthCenterCredential(
     clientId: result.data.client.id,
     name: result.data.client.name,
     expiresAt: result.data.client.expiresAt ?? null,
+    product: result.data.product,
+    productCenter: result.data.productCenter
+      ? {
+          ...result.data.productCenter,
+          baseUrl: result.data.productCenter.baseUrl.replace(/\/+$/, ""),
+        }
+      : undefined,
     sourcePath: filePath,
   };
 }

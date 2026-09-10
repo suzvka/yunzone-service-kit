@@ -1,21 +1,22 @@
-# 鉴权中心凭证文件契约（auth-center.credential.json）
+# 产品凭证文件契约（auth-center.credential.json）
 
-> 版本：v1.0（2026-09）
+> 版本：v2.0（2026-09-10，分段交付）
 > 单一事实源：本文件 + [src/auth/credential-file.ts](../src/auth/credential-file.ts)
-> 适用范围：消费方（宿主应用）对鉴权中心（yunzone_auth）所签发服务凭证的配置渠道。
+> 适用范围：产品接入集群的唯一配置交付物；kit 装配层（不消费、不解释段语义）+ 各消费方按需取段。
 
 ---
 
 ## 1. 定位
 
-- **服务凭证唯一配置渠道**：`apiKey` / `productId` / 鉴权中心地址全部经凭证文件交付，**不走环境变量**（`AUTH_CENTER_*` 三要素与 kit `authCenterFacet` 已退役）。
-- **签发时刻工件**：明文 apiKey 仅存在于鉴权中心管理后台的签发 / 轮换响应（仅此一次）；凭证文件由该响应在**客户端拼装**并下载。服务端只存 hash——无任何补发路径，丢件即重签。
+- **产品接入唯一配置交付物**：注册 / 轮换时由签发方（产品中心）一次性下发完整文件；消费方放置后由 kit 装配——等效于"自动填好环境变量"。kit 只做形态校验与结构化装配，**不消费、不解释任何段的内容语义**；文件命名沿用合一时代的历史名（`auth-center.credential.json`）。
+- **分段结构（段 = 各签发方的语义域）**：鉴权段（顶层 `authCenterUrl` + `apiKey`，yunzone_auth 服务凭证）/ 产品段（`product`，产品权威指代）/ 产品中心段（`productCenter`，调产品中心 v1 的地址与 Bearer）/ `client` 元数据段。
+- **签发时刻工件**：明文 apiKey 仅存在于签发 / 轮换响应（仅此一次）；服务端只存 hash——无任何补发路径，丢件即重签。
 - **全明文**：文件以明文 JSON 存放（与 `.env` 同一安全边界：拿到文件系统访问权即拿到凭证），不做字段级加密。未来加密采用**整文件信封包装**（见 §6），内层 schema 不变。
 - **必须加入 `.gitignore`**：kit 加载时做启发式检查，疑似被 git 跟踪时 `console.warn` 一次（提示非保证）。
 
 ## 2. 文件形态
 
-形态 = 签发/轮换响应体 + `authCenterUrl` 字段：
+形态 = 各段拼装（鉴权段必填，其余段按签发方交付物决定）：
 
 ```json
 {
@@ -24,15 +25,23 @@
   "issuer": "token-authority",
   "authCenterUrl": "https://auth.example.com",
   "client": {
-    "id": "（tokenHash，即 clientId）",
+    "id": "（凭证 id，新模型 = credentials.id）",
     "name": "wanyanai",
-    "productId": "wanyanai",
-    "expiresAt": "2027-09-09T00:00:00.000Z",
+    "productId": "（合一时代兼容字段，可选；权威指代见 product.id）",
+    "expiresAt": null,
     "redirectUris": ["…"],
     "confidential": true,
     "callbackUrls": ["…"]
   },
-  "apiKey": "sk-client-…",
+  "apiKey": "sk-auth-<id>.<key>",
+  "product": {
+    "id": "（产品中心 product.id，轮换不变）",
+    "name": "万言AI"
+  },
+  "productCenter": {
+    "baseUrl": "https://pc.example.com",
+    "apiKey": "sk-pc-…"
+  },
   "endpoints": { "issue": "…", "introspect": "…" }
 }
 ```
@@ -40,10 +49,13 @@
 | 字段 | 必填 | 语义 |
 |---|---|---|
 | `authCenterUrl` | ✓ | 鉴权中心服务地址（加载时归一化尾部斜杠） |
-| `apiKey` | ✓ | 服务凭证明文（`sk-client-` 前缀） |
-| `client.productId` | ✓ | 凭证归属产品 ID（消费方签发 token 时的产品标识） |
-| `client.id` | - | 凭证唯一标识（= tokenHash = clientId） |
-| `client.name` / `client.expiresAt` | - | 展示元数据；`expiresAt` 为签发时快照（auto-renew 场景会失真），仅供展示，运行时有效性以 introspect 为准 |
+| `apiKey` | ✓ | 鉴权段服务凭证明文（新模型 `sk-auth-<id>.<key>` 自编码，凭证 id 即签发者身份 §4.2） |
+| `product.id` | 段存在时 ✓ | 产品权威指代（产品中心 `product.id`，轮换不变）；管理员凭证等非产品交付物无此段 |
+| `product.name` | - | 产品名（展示） |
+| `productCenter.baseUrl` | 段存在时 ✓ | 产品中心服务地址（加载时归一化尾部斜杠） |
+| `productCenter.apiKey` | 段存在时 ✓ | 产品凭证（sk-pc）明文 |
+| `client.productId` | - | 合一时代兼容字段：新签发文件以 `product.id` 为权威指代，旧消费链（读 `credential.productId`）继续可用 |
+| `client.id` / `client.name` / `client.expiresAt` | - | 签发响应元数据；`expiresAt` 为签发时快照（新模型恒 null），仅供展示，运行时有效性以 introspect 为准 |
 | 其余字段（version / type / issuer / endpoints / …） | - | 忽略（向前兼容）：新增字段只允许可选，不改变既有字段语义 |
 
 ## 3. 加载
@@ -57,7 +69,7 @@ const credential = loadAuthCenterCredential({ optional: true }); // 缺失 → n
 ```
 
 - 失败抛 `CredentialFileError`：只报文件路径与字段名，**不回显凭证值**
-- 返回：`authCenterUrl`（尾部斜杠已归一化）/ `apiKey` / `productId` / `clientId?` / `name?` / `expiresAt?` / `sourcePath`
+- 返回：`authCenterUrl`（尾部斜杠已归一化）/ `apiKey` / `productId?` / `clientId?` / `name?` / `expiresAt?` / `product?` / `productCenter?`（`baseUrl` 已归一化）/ `sourcePath`
 
 ## 4. 消费
 
@@ -69,17 +81,17 @@ const client = createAuthCenterClient({
   baseUrl: credential.authCenterUrl,
   apiKey: credential.apiKey,
 });
-// productId 由 credential.productId 提供（业务签发 token 时使用）
+// 产品自指：credential.product?.id（新签发文件为权威指代；历史文件回退 credential.productId）
+// 调产品中心 v1：credential.productCenter?.baseUrl / .apiKey（文件含产品中心段时）
 ```
 
 ## 5. 生命周期
 
 | 事件 | 文件状态 |
 |---|---|
-| 签发 / 轮换 | 管理后台弹窗一次性拼装下载凭证文件（含明文） |
-| refresh / 自动续期 | 令牌值不变 → 文件持续有效 |
-| 轮换完成 | 旧 apiKey 被物理删除 → 旧文件 introspect 返回 `active: false`，必须重新下载 |
-| `expiresAt` 到期 | 运行时以 introspect 结果为准，文件内快照不作判定依据 |
+| 注册 / 轮换（产品中心编排 §3.1） | 一次性下发完整凭证文件（含明文，仅此一次） |
+| 轮换完成 | 旧 apiKey 被物理删除 → 旧文件请求 401，必须换用新文件 |
+| 过期语义 | 新模型凭证恒无过期（以轮换代卫生，DESIGN.md §3.1），文件内快照仅展示 |
 
 ## 6. 未来：整文件加密（预留）
 
