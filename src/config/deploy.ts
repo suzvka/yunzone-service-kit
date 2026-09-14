@@ -45,16 +45,6 @@ export interface NormalizeDeployEnvOptions {
 
 let warnedMissingProvider = false;
 
-/** 输出一次缺省 provider 警告（防平台切换或被忽略的平台注入，不改变行为） */
-function warnDefaultProvider(): void {
-  if (warnedMissingProvider) return;
-  warnedMissingProvider = true;
-  console.warn(
-    "[service-kit/config] DEPLOY_PROVIDER is not set, defaulting to \"self\" " +
-      "(通用模式：中立键直读，不启用平台注入回退；Coze 部署请显式设置 DEPLOY_PROVIDER=coze)"
-  );
-}
-
 /**
  * 将平台注入环境变量按 DEPLOY_PROVIDER 分派映射到中立键（读取时映射，返回拷贝）。
  *
@@ -77,10 +67,6 @@ export function normalizeDeployEnv(
         `Supported: ${SUPPORTED_PROVIDERS.join(", ")}. ` +
         `(vercel/render 等平台适配未落地，见 TICKET-001)`
     );
-  }
-
-  if (options?.provider === undefined && env.DEPLOY_PROVIDER === undefined) {
-    warnDefaultProvider();
   }
 
   if (provider === "coze") {
