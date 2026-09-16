@@ -4,7 +4,9 @@
  * 覆盖：有效文件三要素解析（含尾部斜杠归一化）、单渠道 fail-fast 语义、
  * 非法内容 / 缺字段校验（不回显凭证值）、相对路径默认行为、
  * product / productCenter 可选段装配（整段齐备性、旧文件兼容）、
- * .gitignore 启发式提示的三态（无 .git / 未覆盖 / 已覆盖）。
+ * .gitignore 启发式提示的三态（无 .git / 未覆盖 / 已覆盖）、
+ * 来源解析（环境变量指示 / 冲突抛错）、统一缓存快照与 refresh、
+ * 远端来源（fetch 注入：成功 / 失败 / 超时 / URL 脱敏）。
  */
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -12,19 +14,33 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  AUTH_CENTER_CREDENTIAL_FILE_ENV,
+  AUTH_CENTER_CREDENTIAL_URL_ENV,
   CredentialFileError,
   DEFAULT_CREDENTIAL_FILE,
   loadAuthCenterCredential,
+  refreshAuthCenterCredential,
+  resetAuthCenterCredentialCacheForTest,
 } from "../src/auth";
 
 let dir: string;
 
+/** 清理来源相关环境变量（用例隔离） */
+function clearSourceEnv(): void {
+  delete process.env[AUTH_CENTER_CREDENTIAL_URL_ENV];
+  delete process.env[AUTH_CENTER_CREDENTIAL_FILE_ENV];
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "kit-cred-"));
+  resetAuthCenterCredentialCacheForTest();
+  clearSourceEnv();
 });
 
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
+  clearSourceEnv();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -190,5 +206,188 @@ describe("gitignore 启发式提示", () => {
     writeFileSync(join(dir, ".gitignore"), "ignored.json\n", "utf8");
     loadAuthCenterCredential({ path: writeCredential(validFile, "ignored.json") });
     expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("来源解析（环境变量指示）", () => {
+  it("AUTH_CENTER_CREDENTIAL_FILE 指示路径 → 无 options 也可加载", () => {
+    const filePath = writeCredential(validFile, "env-indicated.json");
+    process.env[AUTH_CENTER_CREDENTIAL_FILE_ENV] = filePath;
+    expect(loadAuthCenterCredential().apiKey).toBe("sk-client-test");
+  });
+
+  it("options.path 覆盖环境变量指示的文件", () => {
+    const envFile = writeCredential({ ...validFile, apiKey: "sk-env" }, "env.json");
+    const explicitFile = writeCredential(
+      { ...validFile, apiKey: "sk-explicit" },
+      "explicit.json"
+    );
+    process.env[AUTH_CENTER_CREDENTIAL_FILE_ENV] = envFile;
+    expect(loadAuthCenterCredential({ path: explicitFile }).apiKey).toBe("sk-explicit");
+  });
+
+  it("URL 与文件键同时设置 → 抛 CredentialFileError（消息含键名、不含值）", () => {
+    process.env[AUTH_CENTER_CREDENTIAL_URL_ENV] = "https://oss.example.com/c.json?sig=SECRET";
+    process.env[AUTH_CENTER_CREDENTIAL_FILE_ENV] = "auth-center.credential.json";
+    try {
+      loadAuthCenterCredential();
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CredentialFileError);
+      const message = (err as Error).message;
+      expect(message).toContain(AUTH_CENTER_CREDENTIAL_URL_ENV);
+      expect(message).toContain(AUTH_CENTER_CREDENTIAL_FILE_ENV);
+      expect(message).not.toContain("SECRET");
+    }
+  });
+});
+
+describe("统一缓存快照与 refresh（文件来源）", () => {
+  it("加载即快照：修改文件不生效，refresh 后生效", async () => {
+    const filePath = writeCredential(validFile);
+    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-client-test");
+
+    writeFileSync(
+      filePath,
+      JSON.stringify({ ...validFile, apiKey: "sk-rotated" }, null, 2),
+      "utf8"
+    );
+    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-client-test");
+
+    await refreshAuthCenterCredential({ path: filePath });
+    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-rotated");
+  });
+
+  it("refresh 读取失败 → warn 且缓存保持旧值（不抛错）", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const filePath = writeCredential(validFile);
+    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-client-test");
+
+    rmSync(filePath);
+    await refreshAuthCenterCredential({ path: filePath });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    // 快照保持：盘上文件已删，缓存命中仍可装配
+    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-client-test");
+  });
+
+  it("reset 助手清空缓存（测试隔离语义）", () => {
+    const filePath = writeCredential(validFile);
+    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-client-test");
+
+    writeFileSync(filePath, JSON.stringify({ ...validFile, apiKey: "sk-new" }, null, 2), "utf8");
+    resetAuthCenterCredentialCacheForTest();
+    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-new");
+  });
+});
+
+describe("远端来源（AUTH_CENTER_CREDENTIAL_URL）", () => {
+  const remoteUrl = "https://oss.example.com/credentials/wanyanai.json?sig=SECRET";
+  const remoteDisplay = "remote://auth-center.credential.json";
+
+  type FetchImpl = (
+    input: string,
+    init: { signal: AbortSignal }
+  ) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
+
+  function stubFetch(impl: FetchImpl): ReturnType<typeof vi.fn> {
+    const fn = vi.fn(impl);
+    vi.stubGlobal("fetch", fn);
+    return fn;
+  }
+
+  /** 返回 HTTP 200 + body 的 fetch 实现 */
+  const okBody =
+    (body: string): FetchImpl =>
+    async () => ({ ok: true, status: 200, text: async () => body });
+
+  it("未预取 → 抛 CredentialFileError（消息不含 URL）；optional → null", () => {
+    process.env[AUTH_CENTER_CREDENTIAL_URL_ENV] = remoteUrl;
+    try {
+      loadAuthCenterCredential();
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CredentialFileError);
+      expect((err as Error).message).not.toContain(remoteUrl);
+      expect((err as Error).message).not.toContain("SECRET");
+    }
+    expect(loadAuthCenterCredential({ optional: true })).toBeNull();
+  });
+
+  it("refresh 成功后加载：装配成功、sourcePath 为远端标识、fetch 收到 URL", async () => {
+    process.env[AUTH_CENTER_CREDENTIAL_URL_ENV] = remoteUrl;
+    const fetchMock = stubFetch(okBody(JSON.stringify(validFile)));
+
+    await refreshAuthCenterCredential();
+    const credential = loadAuthCenterCredential();
+    expect(credential.apiKey).toBe("sk-client-test");
+    expect(credential.sourcePath).toBe(remoteDisplay);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(remoteUrl);
+  });
+
+  it("远端内容非法 → 读侧校验失败（消息不含 URL）", async () => {
+    process.env[AUTH_CENTER_CREDENTIAL_URL_ENV] = remoteUrl;
+    stubFetch(okBody("not-json{"));
+
+    await refreshAuthCenterCredential();
+    try {
+      loadAuthCenterCredential();
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CredentialFileError);
+      expect((err as Error).message).toContain(remoteDisplay);
+      expect((err as Error).message).not.toContain("SECRET");
+    }
+  });
+
+  it("refresh 失败（HTTP 500）→ warn 且读侧走缺失语义", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env[AUTH_CENTER_CREDENTIAL_URL_ENV] = remoteUrl;
+    stubFetch(async () => ({ ok: false, status: 500, text: async () => "" }));
+
+    await refreshAuthCenterCredential();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).not.toContain("SECRET");
+    expect(loadAuthCenterCredential({ optional: true })).toBeNull();
+  });
+
+  it("fetch 拒绝（消息内嵌 URL）→ warn 脱敏，不出现原 URL", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env[AUTH_CENTER_CREDENTIAL_URL_ENV] = remoteUrl;
+    stubFetch(async () => {
+      throw new Error(`request to ${remoteUrl} failed`);
+    });
+
+    await refreshAuthCenterCredential();
+    const message = String(warnSpy.mock.calls[0][0]);
+    expect(message).toContain("<remote-url>");
+    expect(message).not.toContain("SECRET");
+  });
+
+  it("refresh 超时（timeoutMs）→ warn 且不抛错", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env[AUTH_CENTER_CREDENTIAL_URL_ENV] = remoteUrl;
+    stubFetch(
+      (_input, init) =>
+        new Promise<never>((_resolve, reject) => {
+          init.signal.addEventListener("abort", () =>
+            reject(new Error("aborted by timeout"))
+          );
+        })
+    );
+
+    await refreshAuthCenterCredential({ timeoutMs: 20 });
+    expect(warnSpy).toHaveBeenCalled();
+    expect(loadAuthCenterCredential({ optional: true })).toBeNull();
+  });
+
+  it("URL 模式忽略 options.path（来源以环境变量为准）", async () => {
+    const filePath = writeCredential({ ...validFile, apiKey: "sk-local-file" }, "local.json");
+    process.env[AUTH_CENTER_CREDENTIAL_URL_ENV] = remoteUrl;
+    stubFetch(okBody(JSON.stringify({ ...validFile, apiKey: "sk-remote" })));
+
+    await refreshAuthCenterCredential();
+    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-remote");
   });
 });

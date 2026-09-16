@@ -2,6 +2,26 @@
 
 > **记录边界**：本日志只记录 kit 自身的契约 / 实现 / 兼容性变更。消费方（下游服务）的内部迁移细节、文件清单、依赖版本对齐一律不记——那是反向依赖：下游一改，本日志立刻变成错误信息源。需要表述下游影响时，只以「兼容性 / 升级提示」的中立形式写 kit 侧的行为约束，必要时点名**角色**（鉴权中心、用户中心、宿主应用）而不点名具体仓库。
 
+## 0.30.0 — 2026-09-16
+
+凭证来源扩展：凭证（静态内容）的**来源**从"仅本地文件"扩展为"本地文件 / 远端 URL 显式二选一"，两种来源统一走**进程内缓存快照**；新增 `refreshAuthCenterCredential()` 作为唯一更新入口（启动即预取，运行期可刷新）。
+
+### 新增
+
+- **远端来源 `AUTH_CENTER_CREDENTIAL_URL`（可选）**：显式设置即启用远端来源（fetch 取件）；与 `AUTH_CENTER_CREDENTIAL_FILE`（本地路径指示，同版本纳入本契约）互斥，同时设置抛 `CredentialFileError`；远端模式忽略 `options.path`
+- **`refreshAuthCenterCredential(options?)`**：从来源刷新缓存（幂等、**永不抛错**——失败仅 `console.warn` 且缓存不更新）；`timeoutMs` 控制远端抓取超时（默认 10000）；部署约定 = 各服务启动流程调用一次，运行期热更新（如管理台刷新按钮）同调
+- **统一缓存快照**：文件 / 远端来源一致——首次读取（文件来源可同步直读兜底）或 refresh 装入缓存，此后加载一律走缓存；**更新生效点 = 进程重启或显式刷新**；缓存挂载 `globalThis`（CJS / ESM 双构建实例共享，避免预取与读取分属不同实例）
+- **`resetAuthCenterCredentialCacheForTest()`**：测试专用缓存重置（同进程用例隔离）
+- 导出常量 `AUTH_CENTER_CREDENTIAL_URL_ENV` / `AUTH_CENTER_CREDENTIAL_FILE_ENV`
+
+### 兼容性 / 升级提示
+
+- **读取快照化（行为变化）**：`loadAuthCenterCredential` 从"逐次读文件"变为"读缓存快照"——升级后**替换本地文件不再对运行中进程即时生效**，需重启或调用 `refreshAuthCenterCredential()`（与远端来源语义统一；"热更新"以显式刷新形式保留）
+- **失败语义**：远端取件失败（网络 / 非 2xx / 超时 / 运行时无 fetch）记入"缺失"——读侧走既有 ENOENT 分支（`optional ? null : CredentialFileError`），不新增错误族；校验分支（非法 JSON / schema 失败）不变
+- **脱敏**：远端 URL 视为凭证材料——错误 / 告警消息不回显 URL（内嵌 URL 精确替换为 `<remote-url>`）；`sourcePath` 在远端模式返回 `remote://auth-center.credential.json`（不含 URL）
+- 升级动作：在服务启动流程加一行 `await refreshAuthCenterCredential()`（`loadDotEnv` 之后；启动即部署 = "部署时自动调一次"）；仅文件来源且不加该行也可用（读取走同步直读兜底），但跨构建实例的快照一致性以启动预取为准
+- 契约单一事实源：[docs/credential-file.md](docs/credential-file.md) §3（来源 / 缓存 / 刷新 / 失败语义）
+
 ## 0.29.0 — 2026-09-10
 
 产品凭证文件分段交付（对齐产品中心 DESIGN.md §3 统一交付物）：凭证文件定位升级为"产品接入集群的唯一配置交付物"——注册/轮换时由产品中心一次性下发完整文件；kit 装配层职责不变（形态校验 + 结构化装配），不消费、不解释任何段的内容语义。

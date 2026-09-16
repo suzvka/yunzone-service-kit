@@ -71,7 +71,7 @@ const adminEnvSchema = requiredFacet(adminFacet, ["ADMIN_PASSWORD"]);
 const env = loadEnv(adminEnvSchema);
 ```
 
-> 鉴权中心服务凭证不走环境变量：`authCenterFacet` 已退役，唯一渠道是凭证文件（见 `/auth` 的 `loadAuthCenterCredential`）。
+> 鉴权中心服务凭证内容不走环境变量：`authCenterFacet` 已退役，唯一装配渠道是凭证内容——本地文件或远端 URL，来源由 /auth 的来源指示键决定（见 `loadAuthCenterCredential`）。
 
 **aliases 选项**：`loadEnv(schema, { aliases })` 支持规范 key 未设置时回退别名（通用机制；诊断快照只列规范名、不回显值）。平台注入适配（TICKET-001）用预构建的 `deploymentAliases` 常量——**永久机制**（平台注入变量名不可改名，适配层在读取时回退，禁止服务代码裸读）：
 
@@ -233,14 +233,21 @@ Token Authority Service（鉴权中心）对接：**契约副本 + 官方通信�
 - `AuthCenterError`：协议层失败（网络 / 超时 / 非 2xx / 响应体非法）统一归一化；响应体可解析出服务端错误码时保留至 `error.code`
 - **职责边界**：kit 只封装通信协议；探活节奏、降级回退、claims → 业务身份映射等策略由消费方实现
 
-**凭证文件（服务凭证唯一配置渠道，详见 [docs/credential-file.md](docs/credential-file.md)）**：
+**凭证内容（服务凭证唯一装配渠道，详见 [docs/credential-file.md](docs/credential-file.md)）**：
 
-服务凭证（apiKey / productId / 服务地址）不进环境变量。签发或轮换凭证时从鉴权中心管理后台一次性下载凭证文件（明文 apiKey 仅存在于签发/轮换响应，服务端只存 hash，事后无补发路径），放置到服务目录并加入 `.gitignore`：
+服务凭证（apiKey / productId / 服务地址）不进环境变量；**来源**显式二选一——本地文件（默认）或远端 URL（集中托管，如 OSS）。签发或轮换凭证时从鉴权中心管理后台一次性下载凭证文件（明文 apiKey 仅存在于签发/轮换响应，服务端只存 hash，事后无补发路径）：
 
 ```ts
-import { createAuthCenterClient, loadAuthCenterCredential } from "yunzone-service-kit/auth";
+import {
+  createAuthCenterClient,
+  loadAuthCenterCredential,
+  refreshAuthCenterCredential,
+} from "yunzone-service-kit/auth";
 
-// 默认读 <cwd>/auth-center.credential.json；缺失即抛 CredentialFileError（fail-fast）
+// 来源解析：AUTH_CENTER_CREDENTIAL_URL（远端）| AUTH_CENTER_CREDENTIAL_FILE（本地路径）
+// → 默认 <cwd>/auth-center.credential.json；两键同设抛错；缺失即抛 CredentialFileError（fail-fast）
+// 统一缓存快照：更新生效点 = 进程重启或 refreshAuthCenterCredential()
+await refreshAuthCenterCredential(); // 部署约定：启动流程调用一次（远端取件 / 本地读入）
 const credential = loadAuthCenterCredential();
 
 const client = createAuthCenterClient({
@@ -249,9 +256,10 @@ const client = createAuthCenterClient({
 });
 ```
 
-- 文件含明文 apiKey：加载时做启发式检查，疑似被 git 跟踪时 `console.warn` 一次（提示非保证）
+- 远端 fetch 失败与「缺失」同语义（`optional` → null，否则抛错）；任何消息不回显 URL（视为凭证材料）
+- 文件含明文 apiKey：本地来源加载时做启发式检查，疑似被 git 跟踪时 `console.warn` 一次（提示非保证）
 - 文件内 `expiresAt` 仅为签发时快照（auto-renew 场景会失真），仅供展示；运行时有效性以 introspect 为准
-- 轮换后旧文件立即失效（introspect 返回 `active: false`），需重新下载凭证文件
+- 轮换后旧凭证立即失效（introspect 返回 `active: false`）：更新来源内容 + 重启或调用 refresh 生效
 
 ### `/app` — 应用目录契约（AppManifest v1）
 

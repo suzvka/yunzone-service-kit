@@ -8,6 +8,14 @@
  * 各消费方按需取用自己关心的段。环境变量渠道（AUTH_CENTER_* 三要素）已随
  * authCenterFacet 退役，不再受支持。
  *
+ * 来源模型（0.30：单渠道不变，来源可换）：凭证是**静态内容**，来源显式二选一——
+ * 本地文件（默认；AUTH_CENTER_CREDENTIAL_FILE 指示路径）或远端 URL
+ * （AUTH_CENTER_CREDENTIAL_URL；与文件键互斥，同时设置即抛错）。两种来源统一走
+ * **进程内缓存快照**：首次读取或 refreshAuthCenterCredential() 把来源内容装入缓存，
+ * 此后加载一律走缓存；更新生效点 = 进程重启或显式刷新。远端取件失败与「缺失」同
+ * 语义（读侧走 ENOENT 分支，不新增错误族）；URL 含访问凭据，任何消息不回显。
+ * 缓存挂载于 globalThis：CJS/ESM 双构建实例共享同一缓存（dual-package 安全）。
+ *
  * 文件分段（段 = 各签发方的语义域；文件命名沿用合一时代的历史名）：
  * - 鉴权段（顶层 authCenterUrl + apiKey）：yunzone_auth 服务凭证
  *   （sk-auth-<id>.<key> 自编码，凭证 id 即签发者身份，DESIGN.md §4.2）；
@@ -38,6 +46,75 @@ export class CredentialFileError extends Error {
 
 /** 默认凭证文件路径（相对服务目录 / cwd） */
 export const DEFAULT_CREDENTIAL_FILE = "auth-center.credential.json";
+
+/** 远端来源环境变量：显式设置即启用远端来源（与文件键互斥，成对检查） */
+export const AUTH_CENTER_CREDENTIAL_URL_ENV = "AUTH_CENTER_CREDENTIAL_URL";
+
+/** 本地来源环境变量：指示凭证文件路径（可被 options.path 覆盖） */
+export const AUTH_CENTER_CREDENTIAL_FILE_ENV = "AUTH_CENTER_CREDENTIAL_FILE";
+
+/** 远端来源展示标识（不含 URL：URL 含访问凭据，禁止回显） */
+const REMOTE_SOURCE_DISPLAY = "remote://auth-center.credential.json";
+
+/** 凭证来源（解析结果：本地文件 | 远端 URL） */
+type CredentialSource =
+  | { kind: "file"; path: string; display: string; cacheKey: string }
+  | { kind: "url"; url: string; display: string; cacheKey: string };
+
+/**
+ * 解析凭证来源（显式，不嗅探）：
+ * 1. AUTH_CENTER_CREDENTIAL_URL 与 AUTH_CENTER_CREDENTIAL_FILE 同时设置 → 抛错（显式二选一）；
+ * 2. URL 设置 → 远端来源（options.path 忽略）；
+ * 3. 否则文件来源：options.path ?? AUTH_CENTER_CREDENTIAL_FILE ?? DEFAULT_CREDENTIAL_FILE。
+ */
+function resolveCredentialSource(explicitPath?: string): CredentialSource {
+  const url = process.env[AUTH_CENTER_CREDENTIAL_URL_ENV];
+  const fileEnv = process.env[AUTH_CENTER_CREDENTIAL_FILE_ENV];
+  if (url && fileEnv) {
+    throw new CredentialFileError(
+      `[service-kit/auth] credential source conflict: ${AUTH_CENTER_CREDENTIAL_URL_ENV} ` +
+        `and ${AUTH_CENTER_CREDENTIAL_FILE_ENV} are both set（显式二选一：远端 URL 或本地路径）`
+    );
+  }
+  if (url) {
+    return { kind: "url", url, display: REMOTE_SOURCE_DISPLAY, cacheKey: `url:${url}` };
+  }
+  const raw = explicitPath ?? fileEnv ?? DEFAULT_CREDENTIAL_FILE;
+  const abs = isAbsolute(raw) ? raw : resolve(process.cwd(), raw);
+  return { kind: "file", path: abs, display: abs, cacheKey: `file:${abs}` };
+}
+
+/** 进程级共享缓存状态（dual-package 安全：CJS/ESM 双实例共享同一份） */
+interface CredentialCacheState {
+  /** 来源内容缓存（key = 来源标识；值 = 来源原始文本，校验/装配仍在读取时进行） */
+  sources: Map<string, string>;
+  /** 已提示过的文件路径（同路径只提示一次，防轮询刷屏） */
+  gitIgnoreWarned: Set<string>;
+}
+
+/** globalThis 上的缓存状态键名（跨模块实例共享） */
+const CREDENTIAL_CACHE_GLOBAL_KEY = "__yunzoneServiceKitAuthCredentialCache";
+
+/** 读取进程级共享缓存状态（不存在则惰性创建） */
+function cacheState(): CredentialCacheState {
+  const store = globalThis as unknown as {
+    [CREDENTIAL_CACHE_GLOBAL_KEY]?: CredentialCacheState;
+  };
+  if (!store[CREDENTIAL_CACHE_GLOBAL_KEY]) {
+    store[CREDENTIAL_CACHE_GLOBAL_KEY] = {
+      sources: new Map(),
+      gitIgnoreWarned: new Set(),
+    };
+  }
+  return store[CREDENTIAL_CACHE_GLOBAL_KEY];
+}
+
+/** 测试专用：清空来源缓存与 .gitignore 提示记忆（同进程重复用例时保证隔离） */
+export function resetAuthCenterCredentialCacheForTest(): void {
+  const state = cacheState();
+  state.sources.clear();
+  state.gitIgnoreWarned.clear();
+}
 
 /**
  * 凭证文件 schema（形态对齐签发/轮换响应体 + authCenterUrl，分段语义见文件头）：
@@ -74,7 +151,11 @@ const credentialFileSchema = z.object({
 
 /** loadAuthCenterCredential 选项 */
 export interface LoadAuthCenterCredentialOptions {
-  /** 凭证文件路径，默认 `<cwd>/auth-center.credential.json`；相对路径按 cwd 解析 */
+  /**
+   * 凭证文件路径（仅文件来源生效），默认取 `AUTH_CENTER_CREDENTIAL_FILE`，
+   * 再缺省 `<cwd>/auth-center.credential.json`；相对路径按 cwd 解析。
+   * 远端来源（`AUTH_CENTER_CREDENTIAL_URL` 已设置）时忽略本项。
+   */
   path?: string;
   /**
    * 文件不存在时是否返回 null，默认 false。
@@ -103,7 +184,7 @@ export interface AuthCenterCredential {
   product?: { id: string; name?: string };
   /** 产品中心段（文件含 productCenter 段时装配）：调产品中心 v1 的地址与 Bearer */
   productCenter?: { baseUrl: string; apiKey: string };
-  /** 凭证文件绝对路径（诊断用，不含凭证值） */
+  /** 来源标识（诊断用，不含凭证值）：本地来源 = 绝对路径；远端来源 = 不含 URL 的稳定标识 */
   sourcePath: string;
 }
 
@@ -127,23 +208,36 @@ export function loadAuthCenterCredential(
 export function loadAuthCenterCredential(
   options?: LoadAuthCenterCredentialOptions
 ): AuthCenterCredential | null {
-  const filePath = isAbsolute(options?.path ?? DEFAULT_CREDENTIAL_FILE)
-    ? (options?.path as string)
-    : resolve(process.cwd(), options?.path ?? DEFAULT_CREDENTIAL_FILE);
+  const source = resolveCredentialSource(options?.path);
 
-  let content: string;
-  try {
-    content = readFileSync(filePath, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+  // 统一缓存快照：命中即用；未命中时文件来源可同步直读兜底（并装入缓存），
+  // 远端来源记「缺失」语义（与 ENOENT 分支等价——取件失败不新增错误族）。
+  const cache = cacheState().sources;
+  let content = cache.get(source.cacheKey);
+  if (content === undefined) {
+    if (source.kind === "file") {
+      try {
+        content = readFileSync(source.path, "utf8");
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+          if (options?.optional) return null;
+          throw new CredentialFileError(
+            `[service-kit/auth] loadAuthCenterCredential: credential file not found: ${source.path} ` +
+              `(凭证文件是服务凭证的唯一配置渠道：签发/轮换凭证时从鉴权中心管理后台下载，` +
+              `放置到该路径并加入 .gitignore)`
+          );
+        }
+        throw err;
+      }
+      cache.set(source.cacheKey, content);
+    } else {
       if (options?.optional) return null;
       throw new CredentialFileError(
-        `[service-kit/auth] loadAuthCenterCredential: credential file not found: ${filePath} ` +
-          `(凭证文件是服务凭证的唯一配置渠道：签发/轮换凭证时从鉴权中心管理后台下载，` +
-          `放置到该路径并加入 .gitignore)`
+        `[service-kit/auth] loadAuthCenterCredential: remote credential not available ` +
+          `(远端来源未预取或取件失败；本消息不展示 URL。请在启动流程调用 ` +
+          `refreshAuthCenterCredential() 并确认远端可达)`
       );
     }
-    throw err;
   }
 
   let raw: unknown;
@@ -151,7 +245,7 @@ export function loadAuthCenterCredential(
     raw = JSON.parse(content);
   } catch {
     throw new CredentialFileError(
-      `[service-kit/auth] loadAuthCenterCredential: credential file is not valid JSON: ${filePath}`
+      `[service-kit/auth] loadAuthCenterCredential: credential content is not valid JSON: ${source.display}`
     );
   }
 
@@ -161,12 +255,12 @@ export function loadAuthCenterCredential(
       .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
       .join("; ");
     throw new CredentialFileError(
-      `[service-kit/auth] loadAuthCenterCredential: credential file validation failed: ` +
-        `${filePath}. Issues: ${issues}（凭证文件形态见 docs/credential-file.md）`
+      `[service-kit/auth] loadAuthCenterCredential: credential content validation failed: ` +
+        `${source.display}. Issues: ${issues}（凭证文件形态见 docs/credential-file.md）`
     );
   }
 
-  warnIfNotGitIgnored(filePath);
+  if (source.kind === "file") warnIfNotGitIgnored(source.path);
 
   return {
     authCenterUrl: result.data.authCenterUrl.replace(/\/+$/, ""),
@@ -182,12 +276,111 @@ export function loadAuthCenterCredential(
           baseUrl: result.data.productCenter.baseUrl.replace(/\/+$/, ""),
         }
       : undefined,
-    sourcePath: filePath,
+    sourcePath: source.display,
   };
 }
 
-/** 已提示过的文件路径（同路径只提示一次，防轮询刷屏） */
-const gitIgnoreWarned = new Set<string>();
+/** refreshAuthCenterCredential 选项 */
+export interface RefreshAuthCenterCredentialOptions {
+  /** 显式文件路径（仅文件来源生效；语义同 loadAuthCenterCredential 的 path） */
+  path?: string;
+  /** 远端抓取超时毫秒（默认 10000；仅远端来源生效） */
+  timeoutMs?: number;
+}
+
+/**
+ * 从来源刷新凭证缓存（幂等；**永不抛错**——失败仅 console.warn，缓存不更新）。
+ *
+ * - 远端来源：fetch 取件成功才更新缓存（非 2xx / 网络失败 / 超时 → 缓存保持原值；
+ *   冷启动时保持「无凭证」，读侧按缺失语义处理）；
+ * - 文件来源：同步读取入缓存（读取失败 → 缓存保持原值）；
+ * - 部署约定：各服务在启动流程调用一次（启动即部署，「部署时自动调一次」）；
+ *   运行期热更新（如管理台刷新按钮）同样调用本函数。
+ *
+ * 消息脱敏：任何输出不回显远端 URL（本地文件路径不属于凭证值，可输出）。
+ */
+export async function refreshAuthCenterCredential(
+  options?: RefreshAuthCenterCredentialOptions
+): Promise<void> {
+  let source: CredentialSource;
+  try {
+    source = resolveCredentialSource(options?.path);
+  } catch (err) {
+    console.warn(
+      `[service-kit/auth] refreshAuthCenterCredential: 来源解析失败（缓存未更新）: ` +
+        `${err instanceof Error ? err.message : String(err)}`
+    );
+    return;
+  }
+
+  if (source.kind === "url") {
+    await refreshFromUrl(source, options?.timeoutMs ?? 10_000);
+    return;
+  }
+
+  try {
+    cacheState().sources.set(source.cacheKey, readFileSync(source.path, "utf8"));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    console.warn(
+      `[service-kit/auth] refreshAuthCenterCredential: 文件读取失败（缓存未更新）: ` +
+        `${source.display}${code ? ` (${code})` : ""}`
+    );
+  }
+}
+
+/** 运行时 fetch 句柄（Node 18+；本地类型收窄，避免全局类型定义差异） */
+type FetchLike = (
+  input: string,
+  init: { signal: AbortSignal }
+) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
+
+/** 从远端来源取件并更新缓存（失败仅告警；不回显 URL） */
+async function refreshFromUrl(
+  source: Extract<CredentialSource, { kind: "url" }>,
+  timeoutMs: number
+): Promise<void> {
+  const fetchImpl = resolveRuntimeFetch();
+  if (!fetchImpl) {
+    console.warn(
+      "[service-kit/auth] refreshAuthCenterCredential: 当前运行时缺少 fetch（Node 18+ 必需），缓存未更新"
+    );
+    return;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(source.url, { signal: controller.signal });
+    if (!response.ok) {
+      console.warn(
+        `[service-kit/auth] refreshAuthCenterCredential: 远端来源返回 HTTP ${response.status}（缓存未更新；不展示 URL）`
+      );
+      return;
+    }
+    cacheState().sources.set(source.cacheKey, await response.text());
+  } catch (err) {
+    console.warn(
+      `[service-kit/auth] refreshAuthCenterCredential: 远端来源取件失败（缓存未更新；不展示 URL）: ` +
+        `${redactUrl(err instanceof Error ? err.message : String(err), source.url)}`
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** 读取运行时 fetch（存在性检查 + 本地类型收窄） */
+function resolveRuntimeFetch(): FetchLike | null {
+  const candidate = (globalThis as { fetch?: unknown }).fetch;
+  return typeof candidate === "function" ? (candidate as FetchLike) : null;
+}
+
+/** 错误消息脱敏：URL 含访问凭据，精确匹配替换为占位符 */
+function redactUrl(message: string, url: string): string {
+  return message.split(url).join("<remote-url>");
+}
+
+
 
 /**
  * 启发式检查凭证文件是否被 .gitignore 覆盖：未覆盖时 console.warn 一次。
@@ -195,8 +388,9 @@ const gitIgnoreWarned = new Set<string>();
  * `**` 与字符组）——真正的防泄漏以 .gitignore 维护约定为准。
  */
 function warnIfNotGitIgnored(filePath: string): void {
-  if (gitIgnoreWarned.has(filePath)) return;
-  gitIgnoreWarned.add(filePath);
+  const warned = cacheState().gitIgnoreWarned;
+  if (warned.has(filePath)) return;
+  warned.add(filePath);
   try {
     // 从文件所在目录向上找最近的 .git（最多 5 层），在其同目录检查 .gitignore
     let dir = dirname(filePath);
