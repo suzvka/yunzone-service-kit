@@ -23,6 +23,15 @@ function fullManifest(): AppManifest {
         method: "POST",
         path: "/api/v1/text/diagnose",
         tags: ["文本", "同步"],
+        // 接入要点层（全字段）
+        auth: "公开",
+        request: [
+          { name: "text", required: true, note: "待诊断文本" },
+          { name: "locale", note: "输出语言；缺省服务端默认" },
+        ],
+        response: [{ name: "diagnosis", required: true, note: "诊断结论" }],
+        errors: [{ status: 429, note: "调用过于频繁" }],
+        docs: "https://docs.example.com/wanyanai/text-diagnose",
       },
       {
         id: "plugin-list",
@@ -96,6 +105,14 @@ describe("parseAppManifest", () => {
       method: "POST",
       path: "/api/v1/text/diagnose",
       tags: ["文本", "同步"],
+      auth: "公开",
+      request: [
+        { name: "text", required: true, note: "待诊断文本" },
+        { name: "locale", required: false, note: "输出语言；缺省服务端默认" },
+      ],
+      response: [{ name: "diagnosis", required: true, note: "诊断结论" }],
+      errors: [{ status: 429, note: "调用过于频繁" }],
+      docs: "https://docs.example.com/wanyanai/text-diagnose",
     });
   });
 
@@ -113,6 +130,39 @@ describe("parseAppManifest", () => {
     const full = parseAppManifest(fullManifest());
     expect(full.apis[1].method).toBe("GET");
     expect(full.apis[1].tags).toEqual([]);
+  });
+
+  it("接入要点缺省归一化：request / response / errors → []、auth / docs → undefined、required → false", () => {
+    const full = parseAppManifest(fullManifest());
+    // 未声明接入要点的条目：集合类缺省 []、标量类缺省 undefined
+    expect(full.apis[1].auth).toBeUndefined();
+    expect(full.apis[1].request).toEqual([]);
+    expect(full.apis[1].response).toEqual([]);
+    expect(full.apis[1].errors).toEqual([]);
+    expect(full.apis[1].docs).toBeUndefined();
+    // required 缺省归一化为 false（locale 条目未声明 required）
+    expect(full.apis[0].request[1].required).toBe(false);
+  });
+
+  it("接入要点非法形态（request 条目 name 空串）抛错，诊断含字段路径", () => {
+    const manifest = fullManifest();
+    manifest.apis = [
+      {
+        id: "x",
+        name: "X",
+        summary: "s",
+        path: "/x",
+        request: [{ name: "", required: true }],
+      },
+    ];
+    try {
+      parseAppManifest(manifest);
+      expect.unreachable("should throw");
+    } catch (err) {
+      const e = err as AppManifestError;
+      expect(e.code).toBe("APP_MANIFEST_INVALID");
+      expect(e.message).toContain("apis.0.request.0.name");
+    }
   });
 
   it("apis 条目重复 id 抛错（APP_MANIFEST_API_DUPLICATE_ID）", () => {
@@ -225,6 +275,10 @@ describe("resolveAppCatalog", () => {
     expect(app.apis[0].method).toBe("POST");
     expect(app.apis[1].method).toBe("GET");
     expect(app.apis[1].tags).toEqual([]);
+    // 接入要点随 manifest 一并透传（无编排覆盖语义）
+    expect(app.apis[0].auth).toBe("公开");
+    expect(app.apis[0].request[0].name).toBe("text");
+    expect(app.apis[0].errors[0].status).toBe(429);
     expect(app.links.docs).toBe("https://docs.example.com/wanyanai");
     expect(app.links.support).toBeUndefined();
     expect(app.order).toBeUndefined();

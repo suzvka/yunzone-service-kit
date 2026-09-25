@@ -6,7 +6,9 @@
  *   应用名 / 简介 / 访问链接 / 图标 / 封面图 / 背景图 / 状态 / 标签 / 链接
  * - 子产品按契约声明自身介绍，宿主（如用户中心）聚合后标准渲染、随意编排
  * - 子产品可另行自述"本应用提供哪些 API"（可选顶层 apis 命名空间），
- *   宿主按同一链路拉取聚合后标准渲染 API 展示版面
+ *   宿主按同一链路拉取聚合后标准渲染 API 展示版面；
+ *   条目含可选"接入要点层"（鉴权 / 请求与响应要点 / 关键错误 / 文档链接，
+ *   见 AppApiEntry），供给方渐进增强、消费方缺省退化
  * - Headless 纯数据层：契约 + 解析 + 聚合均为纯逻辑，零框架 / 零 React 依赖
  *
  * 编排心智：
@@ -37,11 +39,36 @@ export type AppManifestStatus =
 export type AppApiMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /**
- * API 条目 — 子产品自述"本应用提供一个 API"（纯展示形态）
+ * API 接入要点条目 — 请求 / 响应字段或参数（最小三元素）
  *
- * 面向宿主侧 API 展示版面：只声明人可读的标识信息（名称 / 描述 /
- * 方法 / 路径 / 标签），不承载请求 / 响应 schema 等机器契约；
- * 程序化调用诉求出现时再扩展。
+ * 无类型、无示例、无嵌套：只描述"怎么调 / 拿到什么"的最小要素，
+ * 机器契约细节经条目 `docs` 链接指向。
+ */
+export interface AppApiNote {
+  /** 名称（字段名 / 参数名，人可读） */
+  name: string;
+  /** 是否必填；缺省 false */
+  required?: boolean;
+  /** 一行说明 */
+  note?: string;
+}
+
+/** API 关键错误条目 — 只登记条目级差异错误（全站共性错误收敛到约定文档） */
+export interface AppApiError {
+  /** HTTP 状态码（整数） */
+  status: number;
+  /** 一行说明 */
+  note: string;
+}
+
+/**
+ * API 条目 — 子产品自述"本应用提供一个 API"
+ *
+ * 双层形态：
+ * - **标识层**（必填）：名称 / 描述 / 方法 / 路径 / 标签——人可读的标识信息；
+ * - **接入要点层**（可选，v1 兼容扩展）：鉴权 / 请求与响应要点 / 关键错误 /
+ *   文档链接——描述"怎么调、拿到什么"的最小要素，仍为展示形态；
+ *   完整机器契约（schema / 示例 / 全量错误）经 `docs` 链接指向，不在此承载。
  */
 export interface AppApiEntry {
   /** 应用内唯一标识（版面锚点与程序化引用；重复抛错，见 APP_MANIFEST_API_DUPLICATE_ID） */
@@ -56,6 +83,16 @@ export interface AppApiEntry {
   path: string;
   /** 分组标签；缺省 [] */
   tags?: string[];
+  /** 鉴权声明（人读短标签，如 "公开" / "登录会话" / "签名回调"） */
+  auth?: string;
+  /** 请求要点（字段 / 参数）；缺省 [] */
+  request?: AppApiNote[];
+  /** 响应要点（同构 request）；缺省 [] */
+  response?: AppApiNote[];
+  /** 条目级差异错误；缺省 [] */
+  errors?: AppApiError[];
+  /** 条目级文档链接（绝对 URL，全量契约与示例的详情入口） */
+  docs?: string;
 }
 
 /** 应用视觉资产 */
@@ -137,11 +174,37 @@ export interface AppCatalogEntry {
 }
 
 /**
+ * API 接入要点条目（解析后形态）：required 经归一化后恒存在。
+ */
+export interface ResolvedAppApiNote extends AppApiNote {
+  /** 是否必填（恒为 boolean；缺省归一化为 false） */
+  required: boolean;
+}
+
+/**
+ * API 条目（解析后形态）：method / tags / request / response / errors
+ * 经归一化后恒存在（消费方无需判 undefined）。
+ */
+export interface ResolvedAppApiEntry extends AppApiEntry {
+  /** HTTP 方法（恒存在，缺省归一化为 "GET"） */
+  method: AppApiMethod;
+  /** 分组标签（恒为数组） */
+  tags: string[];
+  /** 请求要点（恒为数组，缺省 []） */
+  request: ResolvedAppApiNote[];
+  /** 响应要点（恒为数组，缺省 []） */
+  response: ResolvedAppApiNote[];
+  /** 条目级差异错误（恒为数组，缺省 []） */
+  errors: AppApiError[];
+}
+
+/**
  * 解析后的标准卡片数据 — 消费方直接渲染形态
  *
  * 归一化保证：tagline 回退 description、tags 恒为数组、
  * links 缺省字段恒为 undefined、status 恒为合法枚举、
- * apis 恒为数组（条目 method 缺省 GET、tags 缺省 []）。
+ * apis 恒为数组（条目 method 缺省 GET、tags / request / response / errors
+ * 缺省 []、required 缺省 false、auth / docs 缺省 undefined）。
  */
 export interface ResolvedApp {
   /** 唯一标识 */
@@ -160,8 +223,8 @@ export interface ResolvedApp {
   assets: AppManifestAssets;
   /** 标签（恒为数组） */
   tags: string[];
-  /** API 清单（恒为数组，缺省 []；来自 manifest 顶层 apis） */
-  apis: AppApiEntry[];
+  /** API 清单（恒为数组，缺省 []；条目为解析后归一化形态） */
+  apis: ResolvedAppApiEntry[];
   /** 附加链接（缺省字段为 undefined） */
   links: AppManifestLinks;
   /** 编排顺序（未设置为 undefined） */

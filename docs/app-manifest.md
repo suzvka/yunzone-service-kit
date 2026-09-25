@@ -1,6 +1,6 @@
 # 应用目录契约（AppManifest v1）
 
-> 版本：v1.0（2026-08-24；v1 内 2026-09-09 新增可选顶层 `apis` 命名空间）
+> 版本：v1.0（2026-08-24；v1 内 2026-09-09 新增可选顶层 `apis` 命名空间；2026-09-25 新增 `apis` 条目可选接入要点字段 `auth` / `request` / `response` / `errors` / `docs`）
 > 单一事实源：本文件 + [src/app/manifest.ts](../src/app/manifest.ts) zod schema 与类型定义。
 > 适用范围：集群子产品（如 WanyanAI）自述"应用介绍"与"本应用提供哪些 API"的契约；宿主（如用户中心）聚合后标准渲染、随意编排。
 > 形态：**Headless 纯数据层**——只提供契约、解析器与聚合纯函数，不涉及任何渲染组件。
@@ -68,7 +68,9 @@
 
 ### 2.5 `apis` 命名空间（顶层，v1 可选扩展）
 
-子产品自述"本应用提供哪些 API"，供宿主（如用户中心）API 展示版面消费。**纯展示形态**：只声明人可读的标识信息，不承载请求 / 响应 schema 等机器契约；程序化调用诉求出现时再扩展。
+子产品自述"本应用提供哪些 API"，供宿主（如用户中心）API 展示版面消费。**展示形态**：只声明人可读的信息；完整机器契约（全量 schema / 示例 / 错误表）经条目 `docs` 链接指向，不在此承载。
+
+**标识层**（条目字段）：
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
@@ -78,6 +80,31 @@
 | `method` | enum | - | `GET` / `POST` / `PUT` / `PATCH` / `DELETE`；缺省 `"GET"` |
 | `path` | string | ✓ | 路径（相对应用 origin，如 `/api/v1/text/diagnose`） |
 | `tags` | string[] | - | 分组标签；缺省 `[]` |
+
+**接入要点层**（可选扩展，描述"怎么调、拿到什么"的最小要素；供给方渐进增强、消费方缺省退化）：
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| `auth` | string | - | 鉴权声明（人读短标签，如 `"公开"` / `"登录会话"` / `"签名回调"`） |
+| `request` | ApiNote[] | - | 请求要点（见下）；缺省 `[]` |
+| `response` | ApiNote[] | - | 响应要点（同构 `request`）；缺省 `[]` |
+| `errors` | ApiError[] | - | 条目级差异错误；缺省 `[]` |
+| `docs` | string | - | 条目级文档链接（绝对 URL；全量契约与示例的详情入口） |
+
+`ApiNote` 条目（`request` / `response` 元素）——**最小三元素**，无类型 / 无示例 / 无嵌套：
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| `name` | string | ✓ | 字段 / 参数名（人可读） |
+| `required` | boolean | - | 是否必填；缺省 `false` |
+| `note` | string | - | 一行说明 |
+
+`ApiError` 条目（`errors` 元素）：
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| `status` | number | ✓ | HTTP 状态码（整数） |
+| `note` | string | ✓ | 一行说明 |
 
 条目级示例（字段示意，非线上返回）:
 
@@ -91,7 +118,12 @@
       "summary": "对输入文本执行框架级诊断分析。",
       "method": "POST",
       "path": "/api/v1/text/diagnose",
-      "tags": ["文本", "同步"]
+      "tags": ["文本", "同步"],
+      "auth": "公开",
+      "request": [{ "name": "text", "required": true, "note": "待诊断文本" }],
+      "response": [{ "name": "diagnosis", "required": true, "note": "诊断结论" }],
+      "errors": [{ "status": 429, "note": "调用过于频繁" }],
+      "docs": "https://wanyan.coze.site/docs/apps/wanyanai"
     }
   ],
   "app": { "...": "同 §3，此处省略" }
@@ -100,10 +132,11 @@
 
 行为规范：
 
-- 解析归一化：`apis` 缺省 `[]`，条目 `method` 缺省 `"GET"`、`tags` 缺省 `[]`；`ResolvedApp.apis` 恒为数组，经 `resolveAppCatalog` 透传
+- 解析归一化：`apis` 缺省 `[]`，条目 `method` 缺省 `"GET"`、`tags` / `request` / `response` / `errors` 缺省 `[]`、`required` 缺省 `false`、`auth` / `docs` 缺省 `undefined`；`ResolvedApp.apis` 恒为数组（条目为解析后归一化形态 `ResolvedAppApiEntry`，消费方无需判 undefined），经 `resolveAppCatalog` 透传
 - **无编排覆盖语义**：API 清单是子产品自述，宿主编排条目不提供覆盖（与 `name` / `status` 不同）
 - 清单一致性：条目 `id` 重复在解析期 fail-fast（`APP_MANIFEST_API_DUPLICATE_ID`），子产品自检即可发现
-- 宿主可经 `appApiEntrySchema` 复用条目校验组合扩展
+- **接入要点供给纪律**：`note` 一行；全站共性（认证失败 / 限流 / 统一信封等）收敛到应用级约定文档，不逐条重复；完整机器契约经 `docs` 指向，不在条目内复制
+- 宿主可经 `appApiEntrySchema`（及 `appApiNoteSchema` / `appApiErrorSchema`）复用条目校验组合扩展
 
 ---
 
@@ -220,3 +253,4 @@ https://<子产品域名>/.well-known/app-manifest.json
 - 新增字段只允许为可选字段，且不得改变既有字段的类型与语义（向前兼容，与 Token Authority 契约同规）。
 - 宿主解析器对旧版本保持兼容；不支持的新版本由解析器显式抛错，禁止静默降级。
 - **可选字段的方向性兼容（zod strip）**：`apis` 为 kit 0.27.0 起的可选新增字段；旧版解析器（≤ 0.26.x）对带 `apis` 的 manifest 会**静默丢弃**该字段（zod 默认 strip 未声明字段）而非报错——消费方依赖 `apis` 前，须先升级 kit 并同步下游依赖（发布时序：kit 先发，下游后升）。
+- **0.31.0 接入要点字段**：`apis` 条目新增的可选字段（`auth` / `request` / `response` / `errors` / `docs`）遵循同一方向性兼容纪律——旧版解析器（≤ 0.30.x）静默 strip；消费方依赖前须先升级 kit（发布时序：kit 先发，下游后升）。

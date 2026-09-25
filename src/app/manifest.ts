@@ -18,9 +18,36 @@ import { AppManifestError } from "./errors";
 import { APP_MANIFEST_SCHEMA_VERSION } from "./types";
 
 /**
+ * API 接入要点条目 schema（appApiEntrySchema.request / response 元素）
+ *
+ * 最小三元素：名称 / 必填 / 一行说明——无类型、无示例、无嵌套
+ * （机器契约细节经条目 `docs` 链接指向，不在此承载）。
+ * 解析后归一化：required → false（缺省时）。
+ */
+export const appApiNoteSchema = z.object({
+  name: z.string().min(1),
+  required: z.boolean().default(false),
+  note: z.string().min(1).optional(),
+});
+
+/**
+ * API 关键错误条目 schema（appApiEntrySchema.errors 元素）
+ *
+ * 只登记条目级差异错误（如 409 冲突 / 404 未注册）；全站共性
+ * （认证失败 / 限流 / 统一信封）由应用级约定文档一次性说明，不入条目。
+ */
+export const appApiErrorSchema = z.object({
+  status: z.number().int(),
+  note: z.string().min(1),
+});
+
+/**
  * API 条目 schema（appManifestSchema.apis 元素）
  *
- * 解析后归一化：method → "GET"、tags → []（缺省时）。
+ * 标识层（必填）：id / name / summary / method / path / tags；
+ * 接入要点层（v1 可选扩展，全可选）：auth / request / response / errors / docs——
+ * 描述"怎么调、拿到什么"的最小要素；仍为展示形态（非机器契约）。
+ * 解析后归一化：method → "GET"、tags → []、request / response / errors → []（缺省时）。
  */
 export const appApiEntrySchema = z.object({
   id: z.string().min(1),
@@ -31,6 +58,12 @@ export const appApiEntrySchema = z.object({
     .default("GET"),
   path: z.string().min(1),
   tags: z.array(z.string()).default([]),
+  // ── 接入要点（供给方渐进增强，消费方缺省退化） ──
+  auth: z.string().min(1).optional(),
+  request: z.array(appApiNoteSchema).default([]),
+  response: z.array(appApiNoteSchema).default([]),
+  errors: z.array(appApiErrorSchema).default([]),
+  docs: z.string().min(1).optional(),
 });
 
 /**

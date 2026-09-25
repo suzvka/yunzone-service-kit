@@ -265,7 +265,7 @@ const client = createAuthCenterClient({
 
 Headless 纯数据层（零框架 / 零 React）：子产品按契约自述"应用介绍"，宿主聚合后标准渲染、随意编排。详见 [docs/app-manifest.md](docs/app-manifest.md)。
 
-- `parseAppManifest(input, source?)` + `appManifestSchema`：契约校验与归一化（`status` → `"live"`、`tags` → `[]`）；失败抛 `AppManifestError`
+- `parseAppManifest(input, source?)` + `appManifestSchema`：契约校验与归一化（`status` → `"live"`、`tags` → `[]`、`apis` 条目接入要点 `request` / `response` / `errors` 缺省 `[]`）；失败抛 `AppManifestError`
 - `resolveAppCatalog(entries, { skipInvalid? })`：把「子产品自述 + 宿主编排覆盖」合并为可直接渲染的 `ResolvedApp[]`（`order` 升序在前、重复 id fail-fast）
 - `APP_MANIFEST_WELL_KNOWN_PATH`：标准端点路径约定 `/.well-known/app-manifest.json`
 

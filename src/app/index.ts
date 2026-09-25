@@ -8,6 +8,8 @@ export * from "./types";
 export { AppManifestError } from "./errors";
 export {
   appApiEntrySchema,
+  appApiNoteSchema,
+  appApiErrorSchema,
   appManifestSchema,
   parseAppManifest,
   type ParsedAppManifest,
