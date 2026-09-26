@@ -1,9 +1,10 @@
 /**
- * 产品凭证文件加载（credential-file）— 单元测试
+ * 产品凭证文件加载（credential-file）— 单元测试（v2 强切形态）
  *
- * 覆盖：有效文件三要素解析（含尾部斜杠归一化）、单渠道 fail-fast 语义、
+ * 覆盖：v2 有效文件装配（产品凭证 / 管理员凭证两形态、尾部斜杠归一化）、
+ * v1 旧形态拒绝与迁移指引（强切）、单渠道 fail-fast 语义、
  * 非法内容 / 缺字段校验（不回显凭证值）、相对路径默认行为、
- * product / productCenter 可选段装配（整段齐备性、旧文件兼容）、
+ * product / productCenter 可选段装配（整段齐备性）、
  * .gitignore 启发式提示的三态（无 .git / 未覆盖 / 已覆盖）、
  * 来源解析（环境变量指示 / 冲突抛错）、统一缓存快照与 refresh、
  * 远端来源（fetch 注入：成功 / 失败 / 超时 / URL 脱敏）。
@@ -55,33 +56,28 @@ function writeCredential(content: unknown, name = DEFAULT_CREDENTIAL_FILE): stri
   return filePath;
 }
 
-/** 形态对齐签发响应体 + authCenterUrl（含未知字段，验证放行） */
+/** v2 产品凭证形态（对齐产品中心签发响应 + authCenterUrl；含未知字段，验证放行） */
 const validFile = {
-  version: "1.0",
-  type: "client-credential",
-  issuer: "token-authority",
+  version: "2.0",
+  type: "product-credential",
+  issuer: "product-center",
   authCenterUrl: "https://auth.example.com/",
-  client: {
-    id: "tok-hash-1",
-    name: "wanyanai",
-    productId: "wanyanai",
-    expiresAt: "2027-09-09T00:00:00.000Z",
-    redirectUris: ["https://app.example.com/callback"],
-  },
-  apiKey: "sk-client-test",
+  authCenterApiKey: "sk-auth-test",
+  clientId: "tok-hash-1",
+  clientSecret: "sk-pc-test",
+  clientName: "wanyanai",
   endpoints: {},
 };
 
 describe("loadAuthCenterCredential", () => {
-  it("有效文件 → 返回三要素并归一化尾部斜杠", () => {
+  it("有效文件（v2 产品凭证形态）→ 返回三要素并归一化尾部斜杠", () => {
     const filePath = writeCredential(validFile);
     expect(loadAuthCenterCredential({ path: filePath })).toEqual({
       authCenterUrl: "https://auth.example.com",
-      apiKey: "sk-client-test",
-      productId: "wanyanai",
+      authCenterApiKey: "sk-auth-test",
       clientId: "tok-hash-1",
-      name: "wanyanai",
-      expiresAt: "2027-09-09T00:00:00.000Z",
+      clientSecret: "sk-pc-test",
+      clientName: "wanyanai",
       sourcePath: filePath,
     });
   });
@@ -90,7 +86,7 @@ describe("loadAuthCenterCredential", () => {
     const filePath = writeCredential({
       ...validFile,
       product: { id: "e7bf14c7-0456-4851-b500-85521a0ba19c", name: "万言AI" },
-      productCenter: { baseUrl: "https://pc.example.com/", apiKey: "sk-pc-test" },
+      productCenter: { baseUrl: "https://pc.example.com/" },
     });
     const cred = loadAuthCenterCredential({ path: filePath });
     expect(cred.product).toEqual({
@@ -99,13 +95,24 @@ describe("loadAuthCenterCredential", () => {
     });
     expect(cred.productCenter).toEqual({
       baseUrl: "https://pc.example.com",
-      apiKey: "sk-pc-test",
     });
   });
 
-  it("缺可选段（旧文件形态）→ product / productCenter 为 undefined", () => {
-    const filePath = writeCredential(validFile);
+  it("管理员凭证形态（无 clientSecret / product / productCenter）→ 装配成功、可选字段为 undefined", () => {
+    const filePath = writeCredential({
+      version: "2.0",
+      type: "client-credential",
+      issuer: "token-authority",
+      authCenterUrl: "https://auth.example.com",
+      authCenterApiKey: "sk-auth-test",
+      clientId: "cred-1",
+      clientName: "admin",
+      clientRole: "admin",
+    });
     const cred = loadAuthCenterCredential({ path: filePath });
+    expect(cred.clientId).toBe("cred-1");
+    expect(cred.clientRole).toBe("admin");
+    expect(cred.clientSecret).toBeUndefined();
     expect(cred.product).toBeUndefined();
     expect(cred.productCenter).toBeUndefined();
   });
@@ -117,10 +124,10 @@ describe("loadAuthCenterCredential", () => {
     );
   });
 
-  it("productCenter 缺 apiKey → CredentialFileError", () => {
+  it("productCenter 缺 baseUrl → CredentialFileError", () => {
     const filePath = writeCredential({
       ...validFile,
-      productCenter: { baseUrl: "https://pc.example.com" },
+      productCenter: {},
     });
     expect(() => loadAuthCenterCredential({ path: filePath })).toThrowError(
       CredentialFileError
@@ -147,11 +154,16 @@ describe("loadAuthCenterCredential", () => {
   });
 
   it.each([
-    ["缺 authCenterUrl", { client: { productId: "p" }, apiKey: "sk-client-test" }, "authCenterUrl"],
+    ["缺 authCenterUrl", { authCenterApiKey: "sk-auth-test", clientId: "c1" }, "authCenterUrl"],
     [
-      "缺 apiKey",
-      { authCenterUrl: "https://auth.example.com", client: { productId: "p" } },
-      "apiKey",
+      "缺 authCenterApiKey",
+      { authCenterUrl: "https://auth.example.com", clientId: "c1" },
+      "authCenterApiKey",
+    ],
+    [
+      "缺 clientId",
+      { authCenterUrl: "https://auth.example.com", authCenterApiKey: "sk-auth-test" },
+      "clientId",
     ],
   ])("%s → 校验失败且报字段路径、不回显凭证值", (_name, content, field) => {
     const filePath = writeCredential(content);
@@ -162,19 +174,32 @@ describe("loadAuthCenterCredential", () => {
       expect(err).toBeInstanceOf(CredentialFileError);
       const message = (err as Error).message;
       expect(message).toContain(field);
-      expect(message).not.toContain("sk-client-test");
+      expect(message).not.toContain("sk-auth-test");
     }
   });
 
-  it("去产品化：缺 client.productId 仍可加载（productId 随鉴权中心去产品化放宽为可选，DESIGN.md §4）", () => {
+  it("v1 旧形态（强切）→ 校验失败且消息附迁移指引（不回显凭证值）", () => {
     const filePath = writeCredential({
+      version: "1.0",
+      type: "product-credential",
+      issuer: "product-center",
       authCenterUrl: "https://auth.example.com",
-      apiKey: "sk-client-test",
-      client: {},
+      apiKey: "sk-auth-v1",
+      client: { id: "c1", name: "old", productId: "p1", expiresAt: null },
+      product: { id: "p1" },
+      productCenter: { baseUrl: "https://pc.example.com", apiKey: "sk-pc-v1" },
     });
-    const credential = loadAuthCenterCredential({ path: filePath });
-    expect(credential.productId).toBeUndefined();
-    expect(credential.apiKey).toBe("sk-client-test");
+    try {
+      loadAuthCenterCredential({ path: filePath });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CredentialFileError);
+      const message = (err as Error).message;
+      expect(message).toContain("v1");
+      expect(message).toContain("迁移");
+      expect(message).not.toContain("sk-auth-v1");
+      expect(message).not.toContain("sk-pc-v1");
+    }
   });
 
   it("无 options → 按 cwd 解析默认路径，缺失报错含默认文件名", () => {
@@ -213,17 +238,17 @@ describe("来源解析（环境变量指示）", () => {
   it("AUTH_CENTER_CREDENTIAL_FILE 指示路径 → 无 options 也可加载", () => {
     const filePath = writeCredential(validFile, "env-indicated.json");
     process.env[AUTH_CENTER_CREDENTIAL_FILE_ENV] = filePath;
-    expect(loadAuthCenterCredential().apiKey).toBe("sk-client-test");
+    expect(loadAuthCenterCredential().authCenterApiKey).toBe("sk-auth-test");
   });
 
   it("options.path 覆盖环境变量指示的文件", () => {
-    const envFile = writeCredential({ ...validFile, apiKey: "sk-env" }, "env.json");
+    const envFile = writeCredential({ ...validFile, authCenterApiKey: "sk-env" }, "env.json");
     const explicitFile = writeCredential(
-      { ...validFile, apiKey: "sk-explicit" },
+      { ...validFile, authCenterApiKey: "sk-explicit" },
       "explicit.json"
     );
     process.env[AUTH_CENTER_CREDENTIAL_FILE_ENV] = envFile;
-    expect(loadAuthCenterCredential({ path: explicitFile }).apiKey).toBe("sk-explicit");
+    expect(loadAuthCenterCredential({ path: explicitFile }).authCenterApiKey).toBe("sk-explicit");
   });
 
   it("URL 与文件键同时设置 → 抛 CredentialFileError（消息含键名、不含值）", () => {
@@ -245,39 +270,43 @@ describe("来源解析（环境变量指示）", () => {
 describe("统一缓存快照与 refresh（文件来源）", () => {
   it("加载即快照：修改文件不生效，refresh 后生效", async () => {
     const filePath = writeCredential(validFile);
-    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-client-test");
+    expect(loadAuthCenterCredential({ path: filePath }).authCenterApiKey).toBe("sk-auth-test");
 
     writeFileSync(
       filePath,
-      JSON.stringify({ ...validFile, apiKey: "sk-rotated" }, null, 2),
+      JSON.stringify({ ...validFile, authCenterApiKey: "sk-rotated" }, null, 2),
       "utf8"
     );
-    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-client-test");
+    expect(loadAuthCenterCredential({ path: filePath }).authCenterApiKey).toBe("sk-auth-test");
 
     await refreshAuthCenterCredential({ path: filePath });
-    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-rotated");
+    expect(loadAuthCenterCredential({ path: filePath }).authCenterApiKey).toBe("sk-rotated");
   });
 
   it("refresh 读取失败 → warn 且缓存保持旧值（不抛错）", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const filePath = writeCredential(validFile);
-    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-client-test");
+    expect(loadAuthCenterCredential({ path: filePath }).authCenterApiKey).toBe("sk-auth-test");
 
     rmSync(filePath);
     await refreshAuthCenterCredential({ path: filePath });
     expect(warnSpy).toHaveBeenCalledTimes(1);
 
     // 快照保持：盘上文件已删，缓存命中仍可装配
-    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-client-test");
+    expect(loadAuthCenterCredential({ path: filePath }).authCenterApiKey).toBe("sk-auth-test");
   });
 
   it("reset 助手清空缓存（测试隔离语义）", () => {
     const filePath = writeCredential(validFile);
-    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-client-test");
+    expect(loadAuthCenterCredential({ path: filePath }).authCenterApiKey).toBe("sk-auth-test");
 
-    writeFileSync(filePath, JSON.stringify({ ...validFile, apiKey: "sk-new" }, null, 2), "utf8");
+    writeFileSync(
+      filePath,
+      JSON.stringify({ ...validFile, authCenterApiKey: "sk-new" }, null, 2),
+      "utf8"
+    );
     resetAuthCenterCredentialCacheForTest();
-    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-new");
+    expect(loadAuthCenterCredential({ path: filePath }).authCenterApiKey).toBe("sk-new");
   });
 });
 
@@ -320,7 +349,7 @@ describe("远端来源（AUTH_CENTER_CREDENTIAL_URL）", () => {
 
     await refreshAuthCenterCredential();
     const credential = loadAuthCenterCredential();
-    expect(credential.apiKey).toBe("sk-client-test");
+    expect(credential.authCenterApiKey).toBe("sk-auth-test");
     expect(credential.sourcePath).toBe(remoteDisplay);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe(remoteUrl);
@@ -383,11 +412,14 @@ describe("远端来源（AUTH_CENTER_CREDENTIAL_URL）", () => {
   });
 
   it("URL 模式忽略 options.path（来源以环境变量为准）", async () => {
-    const filePath = writeCredential({ ...validFile, apiKey: "sk-local-file" }, "local.json");
+    const filePath = writeCredential(
+      { ...validFile, authCenterApiKey: "sk-local-file" },
+      "local.json"
+    );
     process.env[AUTH_CENTER_CREDENTIAL_URL_ENV] = remoteUrl;
-    stubFetch(okBody(JSON.stringify({ ...validFile, apiKey: "sk-remote" })));
+    stubFetch(okBody(JSON.stringify({ ...validFile, authCenterApiKey: "sk-remote" })));
 
     await refreshAuthCenterCredential();
-    expect(loadAuthCenterCredential({ path: filePath }).apiKey).toBe("sk-remote");
+    expect(loadAuthCenterCredential({ path: filePath }).authCenterApiKey).toBe("sk-remote");
   });
 });

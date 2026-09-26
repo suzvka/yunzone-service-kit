@@ -16,13 +16,20 @@
  * 语义（读侧走 ENOENT 分支，不新增错误族）；URL 含访问凭据，任何消息不回显。
  * 缓存挂载于 globalThis：CJS/ESM 双构建实例共享同一缓存（dual-package 安全）。
  *
- * 文件分段（段 = 各签发方的语义域；文件命名沿用合一时代的历史名）：
- * - 鉴权段（顶层 authCenterUrl + apiKey）：yunzone_auth 服务凭证
+ * 文件形态（v2，0.32 起强切；单一命名源 = OAuth 2.0 协议术语，RFC 6749）：
+ * 文件命名沿用合一时代的历史名（auth-center.credential.json），段 = 各签发方的语义域：
+ * - 鉴权段（顶层 authCenterUrl + authCenterApiKey）：yunzone_auth 服务凭证
  *   （sk-auth-<id>.<key> 自编码，凭证 id 即签发者身份，DESIGN.md §4.2）；
+ * - OAuth 客户端段（顶层 clientId + clientSecret + clientName）：客户端身份与密钥，
+ *   字段名与协议参数 client_id / client_secret 同词源——文档与消费方无需"X 即 Y"翻译；
+ *   管理员凭证无 clientSecret（clientRole 标记角色）；
  * - 产品段（product，可选）：产品在产品中心的权威指代（product.id 轮换不变），
  *   消费方据此自指（如 claims.productId、归属校验）；管理员凭证等非产品交付物无此段；
- * - 产品中心段（productCenter，可选）：调产品中心 v1 的地址与 Bearer（sk-pc）；
- * - client 段：签发响应原样携带的元数据（productId 为合一时代兼容字段）。
+ * - 产品中心段（productCenter，可选）：产品中心服务地址（baseUrl）；调产品中心
+ *   v1 的 Bearer 复用 clientSecret——同一枚产品凭证的两个角色，不再单独命名字段。
+ *
+ * 形态迁移（v1 → v2 强切）：v1 字段（顶层 apiKey / client.id / productCenter.apiKey）
+ * 不再受支持；遇到 v1 形态即校验失败，消息附迁移指引（字段重排脚本或重新签发）。
  *
  * 安全约定（与 /config 的 dotenv、envSnapshot 同哲学）：
  * - 文件含明文 apiKey，必须加入 .gitignore；本模块加载时做启发式检查并提示（非保证）；
@@ -117,22 +124,21 @@ export function resetAuthCenterCredentialCacheForTest(): void {
 }
 
 /**
- * 凭证文件 schema（形态对齐签发/轮换响应体 + authCenterUrl，分段语义见文件头）：
- * - 顶层 version / type / issuer / endpoints 为签发响应原样携带的元数据，加载器不消费；
- * - 鉴权段（authCenterUrl + apiKey）必填——文件至少承载一枚可用的鉴权凭证；
- * - client.productId 为合一时代兼容字段（可选，新签发文件以 product.id 为权威指代）；
+ * 凭证文件 schema（v2 形态；单一命名源 = OAuth 2.0 协议术语，RFC 6749）：
+ * - 鉴权段（authCenterUrl + authCenterApiKey）必填——文件至少承载一枚可用的鉴权凭证；
+ * - OAuth 客户端段：clientId 必填（协议参数 client_id 同词源）；clientSecret 可选
+ *   （管理员凭证无 secret）；clientName / clientRole 为展示与角色元数据；
  * - product / productCenter 为可选段（存在即整段装配，段内字段齐备性按段校验）；
- * - 未知字段被 zod 默认剥离（不报错），保证旧加载器读新文件不炸。
+ * - version / type / issuer / endpoints 等签发元数据为未知字段，被 zod 默认剥离（不报错）；
+ * - v1 形态（apiKey / client.id / productCenter.apiKey）强切不再支持，见 looksLikeV1。
  */
 const credentialFileSchema = z.object({
   authCenterUrl: z.string().min(1, "不能为空"),
-  apiKey: z.string().min(1, "不能为空"),
-  client: z.object({
-    productId: z.string().min(1, "不能为空").optional(),
-    id: z.string().optional(),
-    name: z.string().optional(),
-    expiresAt: z.string().nullable().optional(),
-  }),
+  authCenterApiKey: z.string().min(1, "不能为空"),
+  clientId: z.string().min(1, "不能为空"),
+  clientSecret: z.string().min(1, "不能为空").optional(),
+  clientName: z.string().optional(),
+  clientRole: z.string().optional(),
   /** 产品段（可选）：产品权威指代（product.id 轮换不变，产品中心独家权威） */
   product: z
     .object({
@@ -140,11 +146,10 @@ const credentialFileSchema = z.object({
       name: z.string().optional(),
     })
     .optional(),
-  /** 产品中心段（可选）：调产品中心 v1 的地址与 Bearer（sk-pc） */
+  /** 产品中心段（可选）：产品中心服务地址（调产品中心 v1 的 Bearer 复用 clientSecret） */
   productCenter: z
     .object({
       baseUrl: z.string().min(1, "不能为空"),
-      apiKey: z.string().min(1, "不能为空"),
     })
     .optional(),
 });
@@ -166,26 +171,56 @@ export interface LoadAuthCenterCredentialOptions {
   optional?: boolean;
 }
 
-/** 产品凭证（从凭证文件装配，消费方按需取用各段） */
+/** 产品凭证（从凭证文件装配，消费方按需取用各段；命名对齐 OAuth 2.0 协议术语） */
 export interface AuthCenterCredential {
   /** 鉴权中心基础地址（尾部斜杠已归一化） */
   authCenterUrl: string;
-  /** 服务凭证（Bearer，明文；去产品化后为 sk-auth-<id>.<key> 自编码格式） */
-  apiKey: string;
-  /** 凭证归属产品 ID（合一时代兼容字段，可选；权威指代见 product.id） */
-  productId?: string;
-  /** 凭证唯一标识（签发响应 client.id，新模型 = credentials.id） */
-  clientId?: string;
-  /** 凭证名称 */
-  name?: string;
-  /** 签发时快照的过期时间；仅供展示，运行时有效性以 introspect 为准（新模型恒 null） */
-  expiresAt?: string | null;
+  /** 鉴权段服务凭证（Bearer，明文；sk-auth-<id>.<key> 自编码格式） */
+  authCenterApiKey: string;
+  /**
+   * OAuth 客户端身份（协议参数 client_id；产品中心 client_credential.id /
+   * 鉴权中心 credentials.id，轮换保持稳定）
+   */
+  clientId: string;
+  /** OAuth 客户端密钥（协议参数 client_secret；sk-pc-<id>.<key> 明文；管理员凭证无此字段） */
+  clientSecret?: string;
+  /** OAuth 客户端名称（展示用） */
+  clientName?: string;
+  /** 凭证角色（鉴权中心签发形态：admin / normal；产品凭证无此字段） */
+  clientRole?: string;
   /** 产品段（文件含 product 段时装配）：产品权威指代，product.id 轮换不变 */
   product?: { id: string; name?: string };
-  /** 产品中心段（文件含 productCenter 段时装配）：调产品中心 v1 的地址与 Bearer */
-  productCenter?: { baseUrl: string; apiKey: string };
+  /** 产品中心段（文件含 productCenter 段时装配）：产品中心服务地址（尾部斜杠已归一化） */
+  productCenter?: { baseUrl: string };
   /** 来源标识（诊断用，不含凭证值）：本地来源 = 绝对路径；远端来源 = 不含 URL 的稳定标识 */
   sourcePath: string;
+}
+
+/**
+ * v1 旧形态特征检测（仅用于校验失败消息的迁移指引，不参与装配、不回显任何值）。
+ * 强切窗口：v1 文件（2026-09 前签发）必须先字段重排为 v2 或重新签发方可加载。
+ */
+function looksLikeV1(raw: unknown): boolean {
+  if (typeof raw !== "object" || raw === null) return false;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.apiKey === "string" && typeof obj.authCenterApiKey !== "string") return true;
+  const client = obj.client;
+  if (
+    typeof client === "object" &&
+    client !== null &&
+    typeof (client as Record<string, unknown>).id === "string"
+  ) {
+    return true;
+  }
+  const productCenter = obj.productCenter;
+  if (
+    typeof productCenter === "object" &&
+    productCenter !== null &&
+    "apiKey" in (productCenter as Record<string, unknown>)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -256,7 +291,11 @@ export function loadAuthCenterCredential(
       .join("; ");
     throw new CredentialFileError(
       `[service-kit/auth] loadAuthCenterCredential: credential content validation failed: ` +
-        `${source.display}. Issues: ${issues}（凭证文件形态见 docs/credential-file.md）`
+        `${source.display}. Issues: ${issues}（凭证文件形态见 docs/credential-file.md）` +
+        (looksLikeV1(raw)
+          ? "。检测到 v1 旧形态（apiKey / client.id / productCenter.apiKey）：v2 强切后不再支持，" +
+            "请运行凭证文件迁移（字段重排，凭证值不变）或从签发方重新获取 v2 文件"
+          : "")
     );
   }
 
@@ -264,15 +303,14 @@ export function loadAuthCenterCredential(
 
   return {
     authCenterUrl: result.data.authCenterUrl.replace(/\/+$/, ""),
-    apiKey: result.data.apiKey,
-    productId: result.data.client.productId,
-    clientId: result.data.client.id,
-    name: result.data.client.name,
-    expiresAt: result.data.client.expiresAt ?? null,
+    authCenterApiKey: result.data.authCenterApiKey,
+    clientId: result.data.clientId,
+    clientSecret: result.data.clientSecret,
+    clientName: result.data.clientName,
+    clientRole: result.data.clientRole,
     product: result.data.product,
     productCenter: result.data.productCenter
       ? {
-          ...result.data.productCenter,
           baseUrl: result.data.productCenter.baseUrl.replace(/\/+$/, ""),
         }
       : undefined,
