@@ -1,3 +1,4 @@
+/** test-meta: tier=fast; risk=high; owner=platform; expires=2027-03-31 */
 /**
  * 产品凭证文件加载（credential-file）— 单元测试（v2 强切形态）
  *

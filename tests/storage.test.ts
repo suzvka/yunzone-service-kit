@@ -1,3 +1,4 @@
+/** test-meta: tier=fast; risk=medium; owner=platform; expires=2027-03-31 */
 /**
  * storage 模块 — 单元测试（ObjectStore 契约）
  */

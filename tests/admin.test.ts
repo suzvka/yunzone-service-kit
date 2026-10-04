@@ -1,3 +1,4 @@
+/** test-meta: tier=fast; risk=medium; owner=platform; expires=2027-03-31 */
 /**
  * ops 管理后台公共逻辑 — 单元测试
  */

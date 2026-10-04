@@ -1,3 +1,4 @@
+/** test-meta: tier=fast; risk=medium; owner=platform; expires=2027-03-31 */
 /**
  * ops/next 管理后台路由守卫 — 单元测试
  *

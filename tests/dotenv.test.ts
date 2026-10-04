@@ -1,3 +1,4 @@
+/** test-meta: tier=fast; risk=low; owner=platform; expires=2027-03-31 */
 /**
  * config 模块 — .env 文件解析与加载测试
  */

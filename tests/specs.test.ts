@@ -1,3 +1,4 @@
+/** test-meta: tier=fast; risk=low; owner=platform; expires=2027-03-31 */
 /**
  * config 分面规范（specs）— 单元测试
  */

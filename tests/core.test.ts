@@ -1,3 +1,4 @@
+/** test-meta: tier=fast; risk=low; owner=platform; expires=2027-03-31 */
 /**
  * core 模块 — 单元测试
  */

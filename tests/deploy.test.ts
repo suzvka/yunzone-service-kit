@@ -1,3 +1,4 @@
+/** test-meta: tier=fast; risk=low; owner=platform; expires=2027-03-31 */
 /**
  * 部署适配层（deploy）— 单元测试
  */

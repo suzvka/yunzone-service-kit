@@ -1,3 +1,4 @@
+/** test-meta: tier=fast; risk=low; owner=platform; expires=2027-03-31 */
 /**
  * ops 运维报告聚合器 — 单元测试
  */
