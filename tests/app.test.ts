@@ -79,12 +79,14 @@ function minimalManifest(overrides: Record<string, unknown> = {}): AppManifest {
 
 describe("parseAppManifest", () => {
   it("解析合法完整 manifest，全字段保留", () => {
-    const manifest = parseAppManifest(fullManifest(), "wanyanai");
+    const fixture = fullManifest();
+    const manifest = parseAppManifest(fixture, "wanyanai");
     expect(manifest.schemaVersion).toBe("1.0");
     expect(manifest.app.id).toBe("wanyanai");
     expect(manifest.app.name).toBe("WanyanAI");
-    expect(manifest.app.tagline).toBe("AI 驱动的文本诊断专家");
-    expect(manifest.app.description).toContain("插件化智能文本分析平台");
+    // 期望值引用夹具字段（不手抄第二份副本）
+    expect(manifest.app.tagline).toBe(fixture.app.tagline);
+    expect(manifest.app.description).toBe(fixture.app.description);
     expect(manifest.app.href).toBe("https://wanyan.coze.site");
     expect(manifest.app.status).toBe("live");
     expect(manifest.app.assets).toEqual({
@@ -92,7 +94,7 @@ describe("parseAppManifest", () => {
       cover: "/covers/wanyanai.png",
       banner: "/banners/wanyanai.png",
     });
-    expect(manifest.app.tags).toEqual(["开源框架", "可定制"]);
+    expect(manifest.app.tags).toEqual(fixture.app.tags);
     expect(manifest.app.links).toEqual({
       docs: "https://docs.example.com/wanyanai",
       source: "https://github.com/example/wanyanai",
@@ -257,27 +259,28 @@ describe("parseAppManifest", () => {
 
 describe("resolveAppCatalog", () => {
   it("单条 entry：manifest 解析 + 归一化正确", () => {
+    const fixture = fullManifest();
     const apps = resolveAppCatalog([
-      { id: "wanyanai", manifest: fullManifest() },
+      { id: "wanyanai", manifest: fixture },
     ]);
 
     expect(apps).toHaveLength(1);
     const app = apps[0];
     expect(app.id).toBe("wanyanai");
     expect(app.name).toBe("WanyanAI");
-    expect(app.tagline).toBe("AI 驱动的文本诊断专家");
-    expect(app.description).toContain("插件化智能文本分析平台");
+    expect(app.tagline).toBe(fixture.app.tagline);
+    expect(app.description).toBe(fixture.app.description);
     expect(app.href).toBe("https://wanyan.coze.site");
     expect(app.status).toBe("live");
     expect(app.assets.icon).toBe("/icons/wanyanai.png");
-    expect(app.tags).toEqual(["开源框架", "可定制"]);
+    expect(app.tags).toEqual(fixture.app.tags);
     expect(app.apis).toHaveLength(2);
     expect(app.apis[0].id).toBe("text-diagnose");
     expect(app.apis[0].method).toBe("POST");
     expect(app.apis[1].method).toBe("GET");
     expect(app.apis[1].tags).toEqual([]);
     // 接入要点随 manifest 一并透传（无编排覆盖语义）
-    expect(app.apis[0].auth).toBe("公开");
+    expect(app.apis[0].auth).toBe(fixture.apis![0].auth);
     expect(app.apis[0].request[0].name).toBe("text");
     expect(app.apis[0].errors[0].status).toBe(429);
     expect(app.links.docs).toBe("https://docs.example.com/wanyanai");
@@ -287,25 +290,25 @@ describe("resolveAppCatalog", () => {
   });
 
   it("tagline 缺省时回退 description", () => {
+    const fixture = minimalManifest();
     const apps = resolveAppCatalog([
-      { id: "rimlife", manifest: minimalManifest() },
+      { id: "rimlife", manifest: fixture },
     ]);
-    expect(apps[0].tagline).toBe(
-      "RimWorld 专用 LLM 接口，预置游戏世界知识。"
-    );
+    expect(apps[0].tagline).toBe(fixture.app.description);
     expect(apps[0].apis).toEqual([]);
   });
 
   it("编排覆盖：name / status 覆盖 manifest 声明", () => {
+    const overrideName = "万言 AI 文坛";
     const apps = resolveAppCatalog([
       {
         id: "wanyanai",
         manifest: fullManifest(),
-        name: "万言 AI 文坛",
+        name: overrideName,
         status: "beta",
       },
     ]);
-    expect(apps[0].name).toBe("万言 AI 文坛");
+    expect(apps[0].name).toBe(overrideName);
     expect(apps[0].status).toBe("beta");
   });
 

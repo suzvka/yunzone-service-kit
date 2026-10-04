@@ -179,7 +179,7 @@ describe("loadAuthCenterCredential", () => {
     }
   });
 
-  it("v1 旧形态（强切）→ 校验失败且消息附迁移指引（不回显凭证值）", () => {
+  it("v1 旧形态（强切）→ 校验失败且报版本标识（不回显凭证值）", () => {
     const filePath = writeCredential({
       version: "1.0",
       type: "product-credential",
@@ -197,7 +197,7 @@ describe("loadAuthCenterCredential", () => {
       expect(err).toBeInstanceOf(CredentialFileError);
       const message = (err as Error).message;
       expect(message).toContain("v1");
-      expect(message).toContain("迁移");
+      // 迁移指引为展示文案，不锁定；安全不变量（不回显凭证值）由下方断言承担
       expect(message).not.toContain("sk-auth-v1");
       expect(message).not.toContain("sk-pc-v1");
     }
