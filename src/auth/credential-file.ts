@@ -18,8 +18,12 @@
  *
  * 文件形态（v2，0.32 起强切；单一命名源 = OAuth 2.0 协议术语，RFC 6749）：
  * 文件命名沿用合一时代的历史名（auth-center.credential.json），段 = 各签发方的语义域：
- * - 鉴权段（顶层 authCenterUrl + authCenterApiKey）：yunzone_auth 服务凭证
+ * - 鉴权段（顶层 authCenterUrl + authCenterApiKey，成对可选）：yunzone_auth 服务凭证
  *   （sk-auth-<id>.<key> 自编码，凭证 id 即签发者身份，DESIGN.md §4.2）；
+ *   匿名 introspect 消费方（只需公开视图：active / productId 均为契约公开字段，
+ *   token-contract §3.1）可整段省略——无鉴权段形态为合法交付物（如产品中心
+ *   自助台首签未开 issueAuthCredential 的产品凭证）；只设其一即校验失败
+ *   （齐套惯例，对齐 /config storage credentials）；
  * - OAuth 客户端段（顶层 clientId + clientSecret + clientName）：客户端身份与密钥，
  *   字段名与协议参数 client_id / client_secret 同词源——文档与消费方无需"X 即 Y"翻译；
  *   管理员凭证无 clientSecret（clientRole 标记角色）；
@@ -132,27 +136,45 @@ export function resetAuthCenterCredentialCacheForTest(): void {
  * - version / type / issuer / endpoints 等签发元数据为未知字段，被 zod 默认剥离（不报错）；
  * - v1 形态（apiKey / client.id / productCenter.apiKey）强切不再支持，见 looksLikeV1。
  */
-const credentialFileSchema = z.object({
-  authCenterUrl: z.string().min(1, "不能为空"),
-  authCenterApiKey: z.string().min(1, "不能为空"),
-  clientId: z.string().min(1, "不能为空"),
-  clientSecret: z.string().min(1, "不能为空").optional(),
-  clientName: z.string().optional(),
-  clientRole: z.string().optional(),
-  /** 产品段（可选）：产品权威指代（product.id 轮换不变，产品中心独家权威） */
-  product: z
-    .object({
-      id: z.string().min(1, "不能为空"),
-      name: z.string().optional(),
-    })
-    .optional(),
-  /** 产品中心段（可选）：产品中心服务地址（调产品中心 v1 的 Bearer 复用 clientSecret） */
-  productCenter: z
-    .object({
-      baseUrl: z.string().min(1, "不能为空"),
-    })
-    .optional(),
-});
+const credentialFileSchema = z
+  .object({
+    /** 鉴权段（成对可选）：整段省略 = 匿名 introspect 形态；只设其一即校验失败 */
+    authCenterUrl: z.string().min(1, "不能为空").optional(),
+    authCenterApiKey: z.string().min(1, "不能为空").optional(),
+    clientId: z.string().min(1, "不能为空"),
+    clientSecret: z.string().min(1, "不能为空").optional(),
+    clientName: z.string().optional(),
+    clientRole: z.string().optional(),
+    /** 产品段（可选）：产品权威指代（product.id 轮换不变，产品中心独家权威） */
+    product: z
+      .object({
+        id: z.string().min(1, "不能为空"),
+        name: z.string().optional(),
+      })
+      .optional(),
+    /** 产品中心段（可选）：产品中心服务地址（调产品中心 v1 的 Bearer 复用 clientSecret） */
+    productCenter: z
+      .object({
+        baseUrl: z.string().min(1, "不能为空"),
+      })
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    // 鉴权段齐套校验（成对出现，同设同缺）：拆开即配置不完整，
+    // 禁止隐式降级（惯例对齐 /config storage 的凭证齐套语义）
+    const hasUrl = value.authCenterUrl !== undefined;
+    const hasKey = value.authCenterApiKey !== undefined;
+    if (hasUrl !== hasKey) {
+      const missing = hasUrl ? "authCenterApiKey" : "authCenterUrl";
+      ctx.addIssue({
+        code: "custom",
+        message:
+          `鉴权段不完整：检测到 ${hasUrl ? "authCenterUrl" : "authCenterApiKey"} 但缺 ${missing}` +
+          `（鉴权段必须成对出现；匿名 introspect 形态请整段省略）`,
+        path: [missing],
+      });
+    }
+  });
 
 /** loadAuthCenterCredential 选项 */
 export interface LoadAuthCenterCredentialOptions {
@@ -173,10 +195,17 @@ export interface LoadAuthCenterCredentialOptions {
 
 /** 产品凭证（从凭证文件装配，消费方按需取用各段；命名对齐 OAuth 2.0 协议术语） */
 export interface AuthCenterCredential {
-  /** 鉴权中心基础地址（尾部斜杠已归一化） */
-  authCenterUrl: string;
-  /** 鉴权段服务凭证（Bearer，明文；sk-auth-<id>.<key> 自编码格式） */
-  authCenterApiKey: string;
+  /**
+   * 鉴权中心基础地址（尾部斜杠已归一化）。
+   * 可选：无鉴权段形态（匿名 introspect 消费方，公开视图已覆盖 active/productId）
+   * 不含本段；调鉴权中心端点的消费方需判空后传入 createAuthCenterClient。
+   */
+  authCenterUrl?: string;
+  /**
+   * 鉴权段服务凭证（Bearer，明文；sk-auth-<id>.<key> 自编码格式）。
+   * 可选：与 authCenterUrl 成对出现（齐套校验，只设其一即校验失败）。
+   */
+  authCenterApiKey?: string;
   /**
    * OAuth 客户端身份（协议参数 client_id；产品中心 client_credential.id /
    * 鉴权中心 credentials.id，轮换保持稳定）
@@ -302,8 +331,13 @@ export function loadAuthCenterCredential(
   if (source.kind === "file") warnIfNotGitIgnored(source.path);
 
   return {
-    authCenterUrl: result.data.authCenterUrl.replace(/\/+$/, ""),
-    authCenterApiKey: result.data.authCenterApiKey,
+    // 鉴权段成对装配：无鉴权段形态下两键直接不存在（可选字段，消费方判空取用）
+    ...(result.data.authCenterUrl
+      ? { authCenterUrl: result.data.authCenterUrl.replace(/\/+$/, "") }
+      : {}),
+    ...(result.data.authCenterApiKey
+      ? { authCenterApiKey: result.data.authCenterApiKey }
+      : {}),
     clientId: result.data.clientId,
     clientSecret: result.data.clientSecret,
     clientName: result.data.clientName,

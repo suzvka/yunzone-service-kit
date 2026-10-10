@@ -24,7 +24,24 @@
 
 ### 2.1 产品凭证（产品中心签发）
 
-形态 = 各段拼装（鉴权段必填，其余段按签发方交付物决定）：
+形态 = 各段拼装（鉴权段**成对可选**——整段省略即匿名 introspect 形态，只设其一即校验失败；其余段按签发方交付物决定）：
+
+无鉴权段形态（合法交付物；面向匿名 introspect 消费方——公开视图已覆盖 `active` / `productId`，token-contract §3.1；如产品中心自助台首签未开 `issueAuthCredential` 的产品凭证）：
+
+```json
+{
+  "version": "2.0",
+  "type": "product-credential",
+  "issuer": "product-center",
+  "clientId": "…",
+  "clientSecret": "sk-pc-<id>.<key>",
+  "clientName": "yunzone-infer",
+  "product": { "id": "…", "name": "yunzone-infer" },
+  "productCenter": { "baseUrl": "https://pc.example.com" }
+}
+```
+
+含鉴权段形态（消费方需调鉴权中心端点时）：
 
 ```json
 {
@@ -68,8 +85,8 @@
 
 | 字段 | 必填 | 语义 |
 |---|---|---|
-| `authCenterUrl` | ✓ | 鉴权中心服务地址（加载时归一化尾部斜杠） |
-| `authCenterApiKey` | ✓ | 鉴权段服务凭证明文（`sk-auth-<id>.<key>` 自编码，凭证 id 即签发者身份 §4.2） |
+| `authCenterUrl` | 成对可选 | 鉴权中心服务地址（加载时归一化尾部斜杠）；与 `authCenterApiKey` 同设同缺，只设其一即校验失败 |
+| `authCenterApiKey` | 成对可选 | 鉴权段服务凭证明文（`sk-auth-<id>.<key>` 自编码，凭证 id 即签发者身份 §4.2）；匿名 introspect 消费方可整段省略 |
 | `clientId` | ✓ | OAuth 客户端身份（协议参数 `client_id`；产品中心 `client_credential.id` / 鉴权中心 `credentials.id`） |
 | `clientSecret` | 产品凭证 ✓ | OAuth 客户端密钥（协议参数 `client_secret`；`sk-pc-<id>.<key>` 明文；调产品中心 v1 的 Bearer 同此值） |
 | `clientName` | - | OAuth 客户端名称（展示） |
@@ -152,10 +169,14 @@ const credential = loadAuthCenterCredential({ optional: true }); // 缺失 → n
 import { createAuthCenterClient, loadAuthCenterCredential } from "yunzone-service-kit/auth";
 
 const credential = loadAuthCenterCredential();
-const client = createAuthCenterClient({
-  baseUrl: credential.authCenterUrl,
-  apiKey: credential.authCenterApiKey,
-});
+// 调鉴权中心端点的消费方：判空后传入（无鉴权段形态时 introspect 客户端无法创建，
+// 消费方按自身语义降级或拒绝）；匿名 introspect 消费方（公开视图）无需创建客户端
+if (credential.authCenterUrl && credential.authCenterApiKey) {
+  const client = createAuthCenterClient({
+    baseUrl: credential.authCenterUrl,
+    apiKey: credential.authCenterApiKey,
+  });
+}
 // OAuth：client_id = credential.clientId；client_secret = credential.clientSecret
 // 产品自指：credential.product?.id
 // 调产品中心 v1：credential.productCenter?.baseUrl（Bearer = credential.clientSecret）

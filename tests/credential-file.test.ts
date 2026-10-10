@@ -118,6 +118,44 @@ describe("loadAuthCenterCredential", () => {
     expect(cred.productCenter).toBeUndefined();
   });
 
+  it("无鉴权段形态（OAuth 段 + product / productCenter）→ 装配成功、鉴权段两键不存在", () => {
+    // 匿名 introspect 消费方（公开视图已覆盖 active/productId，token-contract §3.1）：
+    // 产品中心自助台首签未开 issueAuthCredential 的交付物即此形态，合法可装配
+    const filePath = writeCredential({
+      version: "2.0",
+      type: "product-credential",
+      issuer: "product-center",
+      clientId: "cred-infer",
+      clientSecret: "sk-pc-test",
+      clientName: "yunzone-infer",
+      product: { id: "app-1", name: "yunzone-infer" },
+      productCenter: { baseUrl: "https://pc.example.com/" },
+    });
+    const cred = loadAuthCenterCredential({ path: filePath });
+    expect(cred.clientId).toBe("cred-infer");
+    expect("authCenterUrl" in cred).toBe(false);
+    expect("authCenterApiKey" in cred).toBe(false);
+    expect(cred.product?.id).toBe("app-1");
+    expect(cred.productCenter).toEqual({ baseUrl: "https://pc.example.com" });
+  });
+
+  it("鉴权段只设其一 → 齐套校验失败（消息含缺失字段名，不回显凭证值）", () => {
+    const onlyUrl = writeCredential({
+      version: "2.0",
+      authCenterUrl: "https://auth.example.com",
+      clientId: "c1",
+    });
+    try {
+      loadAuthCenterCredential({ path: onlyUrl });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(CredentialFileError);
+      const message = (err as Error).message;
+      expect(message).toContain("authCenterApiKey");
+      expect(message).toContain("成对");
+    }
+  });
+
   it("product.id 为空 → CredentialFileError（段内齐备性校验）", () => {
     const filePath = writeCredential({ ...validFile, product: { id: "" } });
     expect(() => loadAuthCenterCredential({ path: filePath })).toThrowError(
