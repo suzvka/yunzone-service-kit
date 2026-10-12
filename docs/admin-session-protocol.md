@@ -1,6 +1,9 @@
 # 管理后台认证协议（Admin Session Protocol）
 
-> **协议版本**：v1.0
+> **协议版本**：v1.0 —— **已废弃（superseded）**：自 kit 0.33.0 起由 v2.0 Admin Keybook
+> 协议（[admin-keybook-protocol.md](./admin-keybook-protocol.md)）取代，`ADMIN_PASSWORD`
+> 凭证链已退役。本文档保留供服务迁移期对照（会话结构 §2.2–§2.4 的载体与格式在 v2.0
+> 中原样沿用，仅 secret 派生物由密码哈希换为密码本指纹）；kit 实现不再依赖本文档。
 > **适用范围**：接入 kit `/ops` 管理后台能力的 Next.js 服务（协议本身与服务清单无关，不枚举具体部署实例）
 > **设计日期**：2026-08-19
 

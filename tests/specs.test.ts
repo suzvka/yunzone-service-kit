@@ -18,7 +18,7 @@ import {
 } from "../src/config";
 
 afterEach(() => {
-  delete process.env.ADMIN_PASSWORD;
+  delete process.env.ADMIN_KEYBOOK;
   delete process.env.DEPLOY_ENV;
   delete process.env.PROJECT_DOMAIN_DEFAULT;
   delete process.env.PUBLIC_BASE_URL;
@@ -37,7 +37,7 @@ describe("composeFacets", () => {
     const keys = facetKeys(schema);
     expect(keys).toContain("DEPLOY_ENV");
     expect(keys).toContain("WORKSPACE_PATH");
-    expect(keys).toContain("ADMIN_PASSWORD");
+    expect(keys).toContain("ADMIN_KEYBOOK");
     expect(keys).toContain("ADMIN_PATH");
   });
 
@@ -46,7 +46,7 @@ describe("composeFacets", () => {
     const schema = composeFacets(deploymentFacet, adminFacet);
     const env = loadEnv(schema);
     expect(env.DEPLOY_ENV).toBe("production");
-    expect(env.ADMIN_PASSWORD).toBeUndefined();
+    expect(env.ADMIN_KEYBOOK).toBeUndefined();
   });
 
   it("重复 key 直接抛错（防止静默覆盖）", () => {
@@ -61,32 +61,32 @@ describe("composeFacets", () => {
 
 describe("requiredFacet", () => {
   it("必填 key 存在且非空时通过", () => {
-    process.env.ADMIN_PASSWORD = "admin-pass";
-    const schema = requiredFacet(adminFacet, ["ADMIN_PASSWORD"]);
+    process.env.ADMIN_KEYBOOK = "./keybook.json";
+    const schema = requiredFacet(adminFacet, ["ADMIN_KEYBOOK"]);
     const env = loadEnv(schema);
-    expect(env.ADMIN_PASSWORD).toBe("admin-pass");
+    expect(env.ADMIN_KEYBOOK).toBe("./keybook.json");
   });
 
   it("必填 key 缺失时 loadEnv 抛 EnvConfigError 且快照不回显值", () => {
-    process.env.ADMIN_PASSWORD = "admin-pass";
-    const schema = requiredFacet(adminFacet, ["ADMIN_PASSWORD", "ADMIN_USERNAME"]);
+    process.env.ADMIN_KEYBOOK = "admin-pass";
+    const schema = requiredFacet(adminFacet, ["ADMIN_KEYBOOK", "ADMIN_SESSION_MAX_AGE"]);
 
     expect(() => loadEnv(schema)).toThrowError(EnvConfigError);
     try {
       loadEnv(schema);
     } catch (err) {
       const message = (err as Error).message;
-      expect(message).toContain("ADMIN_PASSWORD=***set***");
-      expect(message).toContain("ADMIN_USERNAME=(unset)");
+      expect(message).toContain("ADMIN_KEYBOOK=***set***");
+      expect(message).toContain("ADMIN_SESSION_MAX_AGE=(unset)");
       // 不回显任何变量值
       expect(message).not.toContain("admin-pass");
     }
   });
 
   it("空字符串视为未设置", () => {
-    process.env.ADMIN_PASSWORD = "";
-    const schema = requiredFacet(adminFacet, ["ADMIN_PASSWORD"]);
-    expect(() => loadEnv(schema)).toThrowError(/ADMIN_PASSWORD.*required but unset/);
+    process.env.ADMIN_KEYBOOK = "";
+    const schema = requiredFacet(adminFacet, ["ADMIN_KEYBOOK"]);
+    expect(() => loadEnv(schema)).toThrowError(/ADMIN_KEYBOOK.*required but unset/);
   });
 });
 
@@ -148,20 +148,18 @@ describe("envSnapshot", () => {
 describe("facetKeys", () => {
   it("提取 ZodObject 顶层 key", () => {
     expect(facetKeys(adminFacet).sort()).toEqual([
-          "ADMIN_PASSWORD",
+          "ADMIN_KEYBOOK",
           "ADMIN_PATH",
           "ADMIN_SESSION_MAX_AGE",
-          "ADMIN_USERNAME",
         ]);
   });
 
   it("requiredFacet 包装后仍可提取（superRefine 返回 this）", () => {
-    const schema = requiredFacet(adminFacet, ["ADMIN_PASSWORD"]);
+    const schema = requiredFacet(adminFacet, ["ADMIN_KEYBOOK"]);
     expect(facetKeys(schema).sort()).toEqual([
-      "ADMIN_PASSWORD",
+      "ADMIN_KEYBOOK",
       "ADMIN_PATH",
       "ADMIN_SESSION_MAX_AGE",
-      "ADMIN_USERNAME",
     ]);
   });
 });

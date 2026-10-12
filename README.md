@@ -51,7 +51,7 @@ const status = await registry.getStatus(); // { registeredCount, availableCount,
 | 分面 | 变量 | 说明 |
 |------|------|------|
 | `deploymentFacet` | `DEPLOY_ENV`、`PROJECT_DOMAIN_DEFAULT`、`PUBLIC_BASE_URL`、`DEPLOY_PROVIDER`、`HOSTNAME`、`PORT`、`WORKSPACE_PATH` | 部署面（中立键，TICKET-001） |
-| `adminFacet` | `ADMIN_PASSWORD`、`ADMIN_PATH`（默认 `/admin`）、`ADMIN_USERNAME`（可选，启用双凭证）、`ADMIN_SESSION_MAX_AGE`（可选，默认 `86400`） | 管理后台；**未设置密码 = 禁用（503）** |
+| `adminFacet` | `ADMIN_KEYBOOK`（密码本来源：本地路径或 http(s) URL）、`ADMIN_PATH`（默认 `/admin`）、`ADMIN_SESSION_MAX_AGE`（可选，默认 `86400`） | 管理后台（v2.0 密码本协议）；**未设置 = 禁用（503）**；`ADMIN_PASSWORD` / `ADMIN_USERNAME` 已于 0.33.0 退役 |
 
 > `userCenterFacet`（`USER_CENTER_URL` / `USER_CENTER_API_KEY`）已于 0.28.0 退役：计量与定价上移平台计量域后全集群无消费者。
 
@@ -66,8 +66,8 @@ import {
 // 组合分面
 const envSchema = composeFacets(deploymentFacet, adminFacet);
 
-// 模块级必填（如管理后台密码）
-const adminEnvSchema = requiredFacet(adminFacet, ["ADMIN_PASSWORD"]);
+// 模块级必填（如密码本来源）
+const adminEnvSchema = requiredFacet(adminFacet, ["ADMIN_KEYBOOK"]);
 const env = loadEnv(adminEnvSchema);
 ```
 
@@ -179,7 +179,7 @@ import { facetKeys } from "yunzone-service-kit/config";
 const reporter = createOpsReporter({ name: "user-center", version: "1.2.3" });
 reporter.addRegistry("captcha", captchaRegistry);
 reporter.addSection("apiHeat", () => heatCounter.snapshot()); // 形状由宿主定义
-reporter.setEnvKeys(facetKeys(envSchema)); // 或手写白名单 ["DEPLOY_ENV", "ADMIN_PASSWORD"]
+reporter.setEnvKeys(facetKeys(envSchema)); // 或手写白名单 ["DEPLOY_ENV", "ADMIN_KEYBOOK"]
 
 export async function GET() {
   return Response.json(await reporter.report());
@@ -197,15 +197,20 @@ export async function GET() {
 }
 ```
 
-**管理后台认证（Admin Session Protocol v1.0，详见 [docs/admin-session-protocol.md](docs/admin-session-protocol.md)）**——集群内唯一实现，服务**禁止自建** admin-auth：
+**管理后台认证（Admin Keybook Protocol v2.0，详见 [docs/admin-keybook-protocol.md](docs/admin-keybook-protocol.md)）**——集群内唯一实现，服务**禁止自建** admin-auth。凭证 = 密码本（Ed25519 公钥清单，非秘密），登录为挑战应答（私钥本机签名、从不上网）；v1.0 密码字符串链已退役：
 
 | 导出 | 说明 |
 |---|---|
-| `resolveAdminConfig(env?)` | 读取管理面配置；`ADMIN_PASSWORD` 未设置 → `enabled: false`（禁用态 503），**无默认密码回退** |
-| `hashAdminPassword` / `verifyAdminPasswordWithHash` | 登录密码 SHA-256 哈希与常量时间比对（模块加载时缓存哈希，此后不持有明文） |
-| `createSignedAdminSession` / `validateSignedAdminSession` | HMAC-SHA256 签名会话（防伪造、无状态、多实例自动可用）；校验返回会话主体用户名或 `null` |
-| `deriveAdminSessionSecret` | 由密码哈希派生会话密钥——密码轮换后全部旧会话立即失效 |
+| `resolveAdminConfig(env?)` | 同步读取管理面配置；`ADMIN_KEYBOOK` 未设置 → `enabled: false`（禁用态 503），**无任何默认回退** |
+| `parseAdminKeybook` / `loadAdminKeybook` | 密码本 JSON 校验 / 本地路径 + http(s) URL 双源加载（启动一次性） |
+| `initAdminRuntime(opts?)` | 启动装配：加载密码本 → 进程内缓存指纹（**换本须重启**；加载失败 = 禁用态） |
+| `createAdminChallenge` / `verifyAdminChallenge` | 一次性 challenge 令牌（HMAC 无状态 + 120s 窗口 + host 通道绑定 + nonce 进程内一次性） |
+| `buildAdminLoginMessage` / `verifyKeybookSignature` | 登录规范串组装 `v2.{key_id}.{nonce}.{host}.{ts}` / Ed25519 查本验签（撤销条目一律拒绝） |
+| `createSignedAdminSession` / `validateSignedAdminSession` | HMAC-SHA256 签名会话（格式沿用 v1.0、无状态、多实例自动可用）；第二参数为**密码本指纹**，校验返回会话主体 `key_id` 或 `null` |
+| `deriveAdminSessionSecret` | 由密码本指纹派生会话密钥——换本（指纹变化）后全部旧会话立即失效 |
 | `ADMIN_SESSION_COOKIE` / `ADMIN_SESSION_DEFAULT_MAX_AGE_SECONDS` | cookie 名（`admin_session`）与默认有效期（`86400` 秒） |
+
+配套资产：`ops-companion/admin-login.html`（零依赖登录伴侣）、`pnpm adminctl`（`genkey` / `keybook` / `demo` 密钥与密码本运维）。
 
 ### `/ops/next` — 管理后台路由守卫（Next.js 适配层）
 

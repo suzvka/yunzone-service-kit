@@ -8,7 +8,7 @@
  * const reporter = createOpsReporter({ name: "user-center", version: "1.2.3" });
  * reporter.addRegistry("captcha", captchaRegistry);
  * reporter.addSection("apiHeat", () => heatCounter.snapshot());
- * reporter.setEnvKeys(["DEPLOY_ENV", "ADMIN_PASSWORD"]);
+ * reporter.setEnvKeys(["DEPLOY_ENV", "ADMIN_KEYBOOK"]);
  *
  * // 服务自建端点（如 /ops）：
  * export async function GET() {

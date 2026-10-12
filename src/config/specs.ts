@@ -14,7 +14,8 @@
  *   - 项目私有命名空间（服务自有 schema 扩展）：自由命名，但不得占用平台注入命名空间；
  *   - 裸读禁令：禁止直接 process.env.COZE_* 裸读平台注入变量，必须经中立键
  *     （通用契约 + deploymentAliases / normalizeDeployEnv）或自有 schema 显式声明接入。
- * - 管理面语义：ADMIN_PASSWORD 未设置 = 管理后台禁用（503），禁止默认密码回退。
+ * - 管理面语义：ADMIN_KEYBOOK 未设置 = 管理后台禁用（503），禁止任何默认回退
+ *   （v2.0 密码本协议；ADMIN_PASSWORD / ADMIN_USERNAME 已于 0.33.0 退役）。
  * - 鉴权中心服务凭证不走环境变量：唯一渠道是凭证文件（见 /auth 的 loadAuthCenterCredential，
  *   authCenterFacet 已退役）。
  * - 用户中心面 `userCenterFacet`（`USER_CENTER_URL` / `USER_CENTER_API_KEY`）已于 0.28.0 退役：
@@ -38,13 +39,15 @@ export const deploymentFacet = z.object({
   WORKSPACE_PATH: z.string().optional(),
 });
 
-/** ── 管理面：ADMIN_PASSWORD 未设置 = 管理后台禁用（503），禁止默认密码回退 ── */
+/** ── 管理面：ADMIN_KEYBOOK 未设置 = 管理后台禁用（503），禁止任何默认回退 ── */
 export const adminFacet = z.object({
-  ADMIN_PASSWORD: z.string().optional(),
+  /**
+   * 密码本来源（v2.0 Admin Keybook Protocol，见 docs/admin-keybook-protocol.md）：
+   * 本地路径或 http(s) URL，进程启动时一次性加载；未设置 = 管理后台禁用。
+   */
+  ADMIN_KEYBOOK: z.string().optional(),
   /** 管理后台路径前缀，默认 "/admin" */
   ADMIN_PATH: z.string().optional(),
-  /** 管理后台用户名（可选）：设置后启用「用户名 + 密码」双凭证认证 */
-  ADMIN_USERNAME: z.string().optional(),
   /** 会话有效期（秒），默认 86400（24h） */
   ADMIN_SESSION_MAX_AGE: z.string().optional(),
 });
