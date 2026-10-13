@@ -129,7 +129,7 @@ export function resetAuthCenterCredentialCacheForTest(): void {
 
 /**
  * 凭证文件 schema（v2 形态；单一命名源 = OAuth 2.0 协议术语，RFC 6749）：
- * - 鉴权段（authCenterUrl + authCenterApiKey）必填——文件至少承载一枚可用的鉴权凭证；
+ * - 鉴权段（authCenterUrl + authCenterApiKey）成对可选：整段省略 = 匿名 introspect 形态；只设其一即校验失败；
  * - OAuth 客户端段：clientId 必填（协议参数 client_id 同词源）；clientSecret 可选
  *   （管理员凭证无 secret）；clientName / clientRole 为展示与角色元数据；
  * - product / productCenter 为可选段（存在即整段装配，段内字段齐备性按段校验）；
@@ -451,8 +451,6 @@ function resolveRuntimeFetch(): FetchLike | null {
 function redactUrl(message: string, url: string): string {
   return message.split(url).join("<remote-url>");
 }
-
-
 
 /**
  * 启发式检查凭证文件是否被 .gitignore 覆盖：未覆盖时 console.warn 一次。

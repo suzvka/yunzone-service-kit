@@ -3,7 +3,9 @@
  *
  * 集群统一数据库抽象形状：
  * - SQL 字符串即真理：调用方直接书写参数化 SQL（$1、$2 占位），无字段映射层
- * - 渠道三值域：postgres（通用）/ coze（平台注入）/ none（显式无库），渠道差异 = 连接凭证获取方式
+ * - 渠道值域开放（2026-10-13）：内置 postgres（通用）/ coze（平台注入）/ none（显式无库）
+ *   之外，业务可经 registerDatabaseChannel 注册自有渠道（kit 辅助定位：不约束业务），
+ *   渠道差异 = 连接凭证获取方式，全部经同一 createSqlDb 分派
  * - none 即显式无库声明：任何数据库操作（createSqlDb / resolveDatabaseUrl）对其 fail-fast 抛错，
  *   消费方应据此选择非库存储后端（如文件），不做降级或空实现
  * - 事务强承诺：所有实现必须提供 withTransaction（pg 真事务；测试桩快照回滚模拟）
@@ -12,8 +14,11 @@
 
 import type { LifecycleAware } from "../core";
 
-/** 数据库渠道（值域统一；SQL 语义一致，仅连接凭证获取方式不同；none = 显式无库声明） */
-export type DatabaseChannel = "postgres" | "coze" | "none";
+/**
+ * 数据库渠道（值域统一；SQL 语义一致，仅连接凭证获取方式不同）。
+ * 内置三值域 + 业务注册渠道（string 开放面；`string & {}` 保留内置名自动补全）。
+ */
+export type DatabaseChannel = "postgres" | "coze" | "none" | (string & {});
 
 /** 渠道配置：channel 显式必填，禁止自动嗅探与隐式默认 */
 export interface SqlDbConfig {

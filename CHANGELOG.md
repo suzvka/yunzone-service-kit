@@ -15,6 +15,29 @@
   默认不签），且匿名 introspect 语义下鉴权段无增量（active / productId 均为
   token-contract §3.1 公开视图字段）。
 
+## 0.34.0 — 2026-10-13
+
+### Added
+
+- **渠道开放注册（/storage + /db）**：`registerStorageChannel(channel, factory)` /
+  `registerDatabaseChannel(channel, factory)` 允许业务为自有后端注册新渠道
+  （本地内存方案、厂商专有 SDK 等），经同一 `resolveStorageChannel` /
+  `createObjectStore`（及 db 侧同构面）分派——业务侧零分支、零旁路，渠道选择决策
+  统一收口在 kit 抽象层。配套诊断面：`listRegisteredStorageChannels` /
+  `listRegisteredDatabaseChannels` / `isKnown*Channel` / `unregister*Channel`。
+  注册语义：同名覆盖（组合根责任自负）；内置渠道名（s3/coze/none、postgres/coze/none）
+  禁止注册覆盖（官方适配器语义与 none 哨兵不被业务置换）；工厂接收调用时环境快照
+  `{ env }`，凭证自管（内置渠道凭证解析仍归 /config 统一诊断）。
+
+### Changed
+
+- **`StorageChannel` / `DatabaseChannel` 值域开放**：内置三值域 + `(string & {})`
+  开放面（保留内置名自动补全）；`resolve*Channel` 合法值域 = 内置 ∪ 已注册，
+  非法值错误消息在存在注册渠道时附「已注册」清单（无注册时消息格式不变）。
+  动机：kit 定位为集群辅助设施、不得约束业务——封闭渠道 switch 迫使业务在 kit
+  之外重抄渠道分支（旁路实现绕过抽象层），违背辅助定位（消费实例：yunzone-infer
+  数据面本地内存渠道，见其 CouplingRecord 20261013-115500）。
+
 ## 0.33.0 — 2026-10-12
 
 ### Breaking

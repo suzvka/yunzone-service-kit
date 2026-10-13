@@ -3,7 +3,9 @@
  *
  * 集群统一对象存储抽象形状（与 /db 的 SqlDb 契约同构）：
  * - key 即真理：调用方直接组织 storage key（如 "avatars/user123.jpg"），无字段映射层
- * - 渠道三值域：s3（通用 S3）/ coze（平台注入）/ none（显式无存储），渠道差异 = 连接凭证获取方式
+ * - 渠道值域开放（2026-10-13）：内置 s3（通用 S3）/ coze（平台注入）/ none（显式无存储）
+ *   之外，业务可经 registerStorageChannel 注册自有渠道（kit 辅助定位：不约束业务），
+ *   渠道差异 = 连接凭证获取方式，全部经同一 createObjectStore 分派
  * - none 即显式无存储声明：任何存储操作（createObjectStore / resolveStorageConfig）
  *   对其 fail-fast 抛错，消费方应据此选择非对象存储方案，不做降级或空实现
  * - 生命周期：init/disconnect 钩子由组合根统一调度（继承 LifecycleAware）
@@ -12,8 +14,11 @@
 
 import type { LifecycleAware } from "../core";
 
-/** 存储渠道（值域统一；操作语义一致，仅连接凭证获取方式不同；none = 显式无存储声明） */
-export type StorageChannel = "s3" | "coze" | "none";
+/**
+ * 存储渠道（值域统一；操作语义一致，仅连接凭证获取方式不同）。
+ * 内置三值域 + 业务注册渠道（string 开放面；`string & {}` 保留内置名自动补全）。
+ */
+export type StorageChannel = "s3" | "coze" | "none" | (string & {});
 
 /** 渠道配置：channel 显式必填，禁止自动嗅探与隐式默认 */
 export interface ObjectStoreConfig {

@@ -43,8 +43,6 @@ export interface NormalizeDeployEnvOptions {
   provider?: DeployProviderKind;
 }
 
-let warnedMissingProvider = false;
-
 /**
  * 将平台注入环境变量按 DEPLOY_PROVIDER 分派映射到中立键（读取时映射，返回拷贝）。
  *
