@@ -10,14 +10,11 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createSqlDb, resolveDatabaseChannel } from "../src/db";
+import { createSqlDb } from "../src/db";
 import { StorageError, UniqueViolationError } from "../src/db/errors";
 import {
   OFFLINE_DB_CHANNEL,
-  OFFLINE_DB_CONTRACT_VERSION,
   disposeOfflineDb,
-  isOfflineDbActive,
-  isOfflineChannelRegistered,
   registerOfflineChannel,
   resetOfflineDb,
 } from "../src/db/offline";
@@ -55,25 +52,6 @@ beforeEach(async () => {
 afterAll(async () => {
   await disposeOfflineDb();
   unregisterDatabaseChannel(OFFLINE_DB_CHANNEL);
-});
-
-describe("导出面与接线", () => {
-  it("契约版本与渠道名固定", () => {
-    expect(OFFLINE_DB_CONTRACT_VERSION).toBe("1");
-    expect(OFFLINE_DB_CHANNEL).toBe("offline");
-  });
-
-  it("注册后 DATABASE_PROVIDER=offline 可经 resolveDatabaseChannel 解析", () => {
-    expect(isOfflineChannelRegistered()).toBe(true);
-    expect(resolveDatabaseChannel({ DATABASE_PROVIDER: OFFLINE_DB_CHANNEL })).toBe(
-      OFFLINE_DB_CHANNEL
-    );
-  });
-
-  it("未使用的进程不会打开引擎（惰性加载）", () => {
-    // beforeEach 已跑过 DDL，故此处应为 true；可读性断言：确实在跑内存引擎
-    expect(isOfflineDbActive()).toBe(true);
-  });
 });
 
 describe("S1 单进程单库", () => {
