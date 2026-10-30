@@ -36,10 +36,13 @@ export function createSqlDb(
   switch (config.channel) {
     case "postgres":
       // 通用模式：额外获取连接凭证（DATABASE_URL）
-      return new PgSqlDb(resolveDatabaseUrl({ provider: "postgres", env }));
+      return new PgSqlDb(
+        resolveDatabaseUrl({ provider: "postgres", env }),
+        config.options
+      );
     case "coze":
       // coze 模式：按平台注入行为运行（PGDATABASE_URL / PG* 变量组）
-      return new PgSqlDb(resolveDatabaseUrl({ provider: "coze", env }));
+      return new PgSqlDb(resolveDatabaseUrl({ provider: "coze", env }), config.options);
     default: {
       // 业务注册渠道（开放注册表；未注册 → fail-fast，不静默降级）
       const factory = getDatabaseChannelFactory(config.channel);

@@ -15,6 +15,37 @@
   默认不签），且匿名 introspect 语义下鉴权段无增量（active / productId 均为
   token-contract §3.1 公开视图字段）。
 
+## 0.35.0 — 2026-10-30
+
+### Added
+
+- **离线 SQL 渠道（新子路径 `yunzone-service-kit/db/offline`）**：PGlite（WASM 版
+  PostgreSQL）作为 `SqlDb` 实现，经 `registerDatabaseChannel` + `createSqlDb` 同一
+  分派路径生效——这是 0.34.0 渠道开放注册的官方内存方案，业务侧零分支、零旁路。
+  导出：`registerOfflineChannel()`（幂等注册 `offline` 渠道）、`getOfflineDb()`、
+  `resetOfflineDb()` / `disposeOfflineDb()`（用例间清空 / 收尾释放）、
+  `isOfflineChannelRegistered()` / `isOfflineDbActive()`（配置自检）、
+  `OFFLINE_DB_CHANNEL` / `OFFLINE_DB_CONTRACT_VERSION`，以及可替换驱动面
+  `OfflineDriver` / `OfflineDriverFactory` / `pgliteDriver`。
+  语义对齐：真事务（禁止嵌套）、pg 23505 → `UniqueViolationError`、`information_schema`
+  自省、`now()` 事务内恒定、`gen_random_uuid()` 默认值、JSONB 往返为对象、
+  `ON CONFLICT` / `RETURNING`、`getPool()` 提供 omni-auth 所需的结构化 PoolLike。
+  单例语义：同进程内任意次数 `createSqlDb({ channel: "offline" })` 共享同一引擎与同一库。
+  必然差异：单连接 FIFO 串行（事务期间其它语句排队而非交错）、不落盘、仅 `public` schema。
+  **兼容性**：`@electric-sql/pglite` 为可选 peer（`peerDependenciesMeta.optional`），
+  仅 `registerOfflineChannel()` 后按需动态加载；主入口与 `/db` 产物不引用它，
+  生产安装与生产构建不触达。宿主项目需将其加入 devDependencies。
+
+### Changed
+
+- **`SqlDbConfig.options`**（`/db`）：`createSqlDb({ channel, options? })` 现支持透传
+  连接池选项（`PgSqlDbOptions`：`ssl` / `max` / `idleTimeoutMillis`），与既有
+  `new PgSqlDb(url, options)` 等价。目的是消除“为传 SSL 而直连构造”的旁路——直连
+  会绕过渠道分派，使自定义渠道与离线渠道在那些项目里永远不生效。向后兼容（选填）。
+- **`normalizeDbError` 导出**（`/db` 内部）：错误归一化（23505 → `UniqueViolationError`）
+  自 `pg.ts` 抽出并与离线引擎共用，两套适配器的错误语义从此只有一处真理；
+  `PgSqlDb` 行为不变。
+
 ## 0.34.0 — 2026-10-13
 
 ### Added

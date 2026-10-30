@@ -24,3 +24,25 @@ export class UniqueViolationError extends StorageError {
 
 /** 数据库配置错误（渠道非法 / none 渠道下创建执行器 / 渠道凭证缺失） */
 export class StorageConfigError extends StorageError {}
+
+/** pg 唯一约束冲突错误码 */
+const PG_UNIQUE_VIOLATION = "23505";
+
+/**
+ * 错误归一化：底层驱动错误 → kit 错误族
+ *
+ * 唯一约束冲突（23505）归一化为 UniqueViolationError，
+ * 其余原样返回（保留驱动原始错误码与堆栈，便于排障）。
+ * 官方适配器（PgSqlDb）与离线引擎（/db/offline）共用本函数——
+ * 两条实现路径的错误语义因此只有一处真理。
+ */
+export function normalizeDbError(err: unknown): unknown {
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: string }).code === PG_UNIQUE_VIOLATION
+  ) {
+    return new UniqueViolationError((err as Error).message);
+  }
+  return err;
+}

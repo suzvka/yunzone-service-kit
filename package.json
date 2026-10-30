@@ -1,6 +1,6 @@
 {
   "name": "yunzone-service-kit",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "description": "云洲服务集群通用基础设施：插件式注册中心基座（/registry）、运行时配置层（/config）、SQL 数据库抽象（/db）、对象存储抽象（/storage）、共享原语（/core）、运维数据接口（/ops）、鉴权中心契约与客户端（/auth）与应用目录契约（/app）",
   "license": "MIT",
   "private": false,
@@ -43,6 +43,11 @@
       "types": "./dist/db/index.d.ts",
       "import": "./dist/db/index.js",
       "require": "./dist/db/index.cjs"
+    },
+    "./db/offline": {
+      "types": "./dist/db/offline/index.d.ts",
+      "import": "./dist/db/offline/index.js",
+      "require": "./dist/db/offline/index.cjs"
     },
     "./storage": {
       "types": "./dist/storage/index.d.ts",
@@ -93,14 +98,19 @@
   ],
   "peerDependencies": {
     "next": ">=14",
-    "zod": "^4"
+    "zod": "^4",
+    "@electric-sql/pglite": "^0.5.0"
   },
   "peerDependenciesMeta": {
     "next": {
       "optional": true
+    },
+    "@electric-sql/pglite": {
+      "optional": true
     }
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.13",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
     "next": "16.1.1",
@@ -110,8 +120,8 @@
     "zod": "^4.3.5"
   },
   "dependencies": {
-    "pg": "^8.23.0",
     "@aws-sdk/client-s3": "^3",
-    "@aws-sdk/s3-request-presigner": "^3"
+    "@aws-sdk/s3-request-presigner": "^3",
+    "pg": "^8.23.0"
   }
 }

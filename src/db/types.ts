@@ -13,6 +13,7 @@
  */
 
 import type { LifecycleAware } from "../core";
+import type { PgSqlDbOptions } from "./pg";
 
 /**
  * 数据库渠道（值域统一；SQL 语义一致，仅连接凭证获取方式不同）。
@@ -23,6 +24,13 @@ export type DatabaseChannel = "postgres" | "coze" | "none" | (string & {});
 /** 渠道配置：channel 显式必填，禁止自动嗅探与隐式默认 */
 export interface SqlDbConfig {
   channel: DatabaseChannel;
+  /**
+   * 连接池选项（仅 postgres / coze 渠道生效，透传给 PgSqlDb）
+   *
+   * 存在意义：消除“为了传 SSL 而直接 new PgSqlDb”的旁路——
+   * 直连会绕过渠道分派，使自定义渠道（含 offline）在部分项目里永远不生效。
+   */
+  options?: PgSqlDbOptions;
 }
 
 /**

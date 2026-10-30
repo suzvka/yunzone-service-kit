@@ -13,11 +13,8 @@
 
 import { Pool } from "pg";
 import type { PoolClient, PoolConfig } from "pg";
-import { UniqueViolationError } from "./errors";
+import { normalizeDbError } from "./errors";
 import type { SqlDb } from "./types";
-
-/** pg 唯一约束冲突错误码 */
-const PG_UNIQUE_VIOLATION = "23505";
 
 /** PgSqlDb 构造选项（透传给 pg Pool） */
 export interface PgSqlDbOptions {
@@ -49,17 +46,8 @@ export function isPoolProvider(db: unknown): db is SqlDb & PoolProvider {
   );
 }
 
-/** 错误归一化：底层 pg 错误 → kit 错误族 */
-function normalizeError(err: unknown): unknown {
-  if (
-    typeof err === "object" &&
-    err !== null &&
-    (err as { code?: string }).code === PG_UNIQUE_VIOLATION
-  ) {
-    return new UniqueViolationError((err as Error).message);
-  }
-  return err;
-}
+/** 错误归一化：底层 pg 错误 → kit 错误族（实现见 ./errors，两套适配器共用） */
+const normalizeError = normalizeDbError;
 
 /**
  * pg 查询能力最小面（连接池与事务连接均满足）。

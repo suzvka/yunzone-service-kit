@@ -129,7 +129,7 @@ const env = loadEnv(envSchema, { dotenv: true });
 - `PgSqlDb`：kit 官方渠道适配器（`postgres` / `coze` 两渠道共用；真事务 BEGIN/COMMIT/ROLLBACK、事务代理禁止嵌套、pg 23505 归一化为 `UniqueViolationError`、支持 `ssl` / `max` / `idleTimeoutMillis` 连接池选项）
 - `PoolProvider` + `isPoolProvider(db)`：连接池提供能力与类型守卫（宿主注入场景，如把池传给 omni-auth 等外部库），替代 `(db as PgSqlDb)` 类型断言；事务代理不实现该接口，守卫对其返回 `false`
 - `resolveDatabaseChannel`：渠道解析，唯一来源 `DATABASE_PROVIDER`，未设置默认 `postgres`（不自动嗅探）
-- `createSqlDb({ channel })`：渠道工厂——按 channel 分派凭证获取并返回 `PgSqlDb` 实例；需要自定义连接池选项（如 SSL）时直接 `new PgSqlDb(url, options)`
+- `createSqlDb({ channel, options? })`：渠道工厂——按 channel 分派凭证获取并返回 `PgSqlDb` 实例；连接池选项（`ssl` / `max` / `idleTimeoutMillis`）经 `options` 传入，**无需**为了带 SSL 而绕过工厂直连 `new PgSqlDb`（直连会绕过渠道分派，使自定义渠道与离线渠道失效）
 - 错误族：`StorageError` 基类、`UniqueViolationError`（`code = "UNIQUE_VIOLATION"`，与 omni-auth SDK 同语义错误码对齐）、`StorageConfigError`（配置错误）
 
 ```ts
@@ -142,6 +142,27 @@ const rows = await db.query("SELECT id FROM users WHERE name = $1", ["alice"]);
 ```
 
 > **事务边界约束**：`withTransaction` 回调内禁止调用 omni-auth 等外部库的认证/写 API——跨抽象事务互相不可见（外部库在池上另开连接），其写入会静默逃逸本事务。
+
+#### `/db/offline` — 离线渠道（内存 PostgreSQL）
+
+需要“脱离云端资源跑测试”时的官方渠道：PGlite（WASM 版 PostgreSQL，方言与真 PG 一致）作为 `SqlDb` 实现，经注册表与 `createSqlDb` 同一分派路径生效，**业务代码零分支**。
+
+- 引擎单例：同一进程内任意次数 `createSqlDb({ channel: "offline" })` 返回同一实例、同一个库（多模块、多领域单例必须看见同一份数据）
+- `registerOfflineChannel()`：注册 `offline` 渠道（幂等）；随后 `DATABASE_PROVIDER=offline` 即经 `resolveDatabaseChannel` 合法解析
+- `resetOfflineDb()` / `disposeOfflineDb()`：用例间清空数据 / 收尾释放；`isOfflineChannelRegistered()` / `isOfflineDbActive()` 为配置自检面
+- 依赖边界：PGlite 是**可选 peer**，只在 `registerOfflineChannel()` 后按需动态加载；主入口与 `/db` 产物不引用它，生产安装与生产构建均不触达
+- 语义对齐：真事务（禁止嵌套）、`UniqueViolationError` 归一化、`information_schema` 自省、`now()` 事务内恒定、`gen_random_uuid()` 默认值、JSONB 往返为对象、`ON CONFLICT` / `RETURNING`
+- 必然差异：单连接 FIFO 串行（事务期间其它语句排队而非交错）、不落盘、仅 `public` schema；`CREATE DATABASE` / `LISTEN` 由引擎静默忽略（因此 bootstrap 类逻辑不得在离线渠道下运行——`DATABASE_PROVIDER !== "postgres"` 即短路）
+
+```ts
+// tests/setup.ts（宿主项目一处即可）
+import { registerOfflineChannel } from "yunzone-service-kit/db/offline";
+
+registerOfflineChannel();
+process.env.DATABASE_PROVIDER = "offline";
+```
+
+> 宿主项目需将 `@electric-sql/pglite` 加入 **devDependencies**（`pnpm add -D @electric-sql/pglite`）；未安装时 `registerOfflineChannel()` 之后的首次查询会抛 `StorageConfigError` 并给出安装指引。
 
 ### `/storage` — 对象存储抽象
 
