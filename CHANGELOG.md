@@ -4,6 +4,25 @@
 
 ### Changed
 
+- **Token Authority 契约与实现对齐**（`/auth` token-contract，共识版 v1.8 → **v1.9**）：
+  本次**不新增语义**，只删除鉴权中心去产品化后代码里已不存在的字段与错误码——
+  - `TokenIssueRequest.productId`：必填 `string` → **可选**（不透明透传进 `claims`，
+    不参与键位/鉴权/隔离）；`TokenIssueResponse` / `TokenIntrospectResponse` **删除顶层
+    `productId`**（归属语义走 `claims`）；`TokenRevokeRequest` **删除 `productId`**（批删只按 `tag`）；
+  - `TOKEN_ERROR_CODES`：剔除 `PRODUCT_NOT_ALLOWED` / `PRODUCT_NOT_FOUND`，补入
+    `TOKEN_NOT_OWNED`（越签发者的单删/续期 → 403），现值域与 `yunzone_auth/src/lib/errors.ts`
+    的 v1 token 端点真实返回一致；
+  - 注释口径归位：replace 键位 = `(签发者凭证 id, tag)`（不再是 `(productId, tag, claims.type)`）、
+    `lookup.id` = `token_hash`（旧注释“= publicClaims.clientId”随 client-credential 实体退场作废）、
+    `TokenPublicClaims` 标为历史形态（服务端不解释不校验）、revoke 幂等语义改为物理删除真实形状；
+  - `/auth` credential-file 无鉴权段形态的注释修正（公开视图不再包含 productId）；
+    `docs/token-contract.md` §2/§3/§4/§5/§6/§7 同步重写并新增 v1.9 修订记录（#32–#36）。
+  **兼容性**：纯类型层收紧——旧数据里 `productId` 仍可作为 `claims` 透传读取（消费方自报值）；
+  读 `.productId` 顶层字段的消费方（如 yunzone_user_center `token-authority/client.ts` 的
+  `CertificateIssueResponse.productId`）升级后拿到 `undefined`，需改读 `claims.productId`——
+  服务端本来就不返回该字段，此前属类型谎言而非新破坏。
+  `TokenIssueRequest.productId` 由必填变可选、字段删除均为放宽或去伪，不阻断现有调用体。
+
 - **产品凭证文件鉴权段改为成对可选**（`/auth` credential-file）：`authCenterUrl` /
   `authCenterApiKey` 改为可选且齐套校验（只设其一即校验失败，消息含缺失字段名；
   惯例对齐 `/config` storage credentials）——无鉴权段形态（OAuth 段 + product /
@@ -12,8 +31,8 @@
   调鉴权中心端点的调用方判空后传入 `createAuthCenterClient`（如 product_center
   `token-authority.ts`）；匿名 introspect 消费方不受影响（无需创建客户端）。
   动机：产品中心自助台首签交付物即为无鉴权段形态（`issueAuthCredential`
-  默认不签），且匿名 introspect 语义下鉴权段无增量（active / productId 均为
-  token-contract §3.1 公开视图字段）。
+  默认不签），且匿名 introspect 语义下鉴权段无增量（公开视图只出 `active` /
+  `expiresAt` 与签发时声明公开的字段，token-contract §3.1）。
 
 ## 0.35.0 — 2026-10-30
 

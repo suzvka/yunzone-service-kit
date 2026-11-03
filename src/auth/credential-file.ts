@@ -197,8 +197,8 @@ export interface LoadAuthCenterCredentialOptions {
 export interface AuthCenterCredential {
   /**
    * 鉴权中心基础地址（尾部斜杠已归一化）。
-   * 可选：无鉴权段形态（匿名 introspect 消费方，公开视图已覆盖 active/productId）
-   * 不含本段；调鉴权中心端点的消费方需判空后传入 createAuthCenterClient。
+   * 可选：无鉴权段形态（匿名 introspect 消费方，公开视图已覆盖 active / expiresAt
+   * 与签发时声明公开的字段）不含本段；调鉴权中心端点的消费方需判空后传入 createAuthCenterClient。
    */
   authCenterUrl?: string;
   /**

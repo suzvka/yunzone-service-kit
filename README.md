@@ -261,7 +261,7 @@ Token Authority Service（鉴权中心）对接：**契约副本 + 官方通信�
 
 **凭证内容（服务凭证唯一装配渠道，详见 [docs/credential-file.md](docs/credential-file.md)）**：
 
-服务凭证（apiKey / productId / 服务地址）不进环境变量；**来源**显式二选一——本地文件（默认）或远端 URL（集中托管，如 OSS）。签发或轮换凭证时从鉴权中心管理后台一次性下载凭证文件（明文 apiKey 仅存在于签发/轮换响应，服务端只存 hash，事后无补发路径）：
+服务凭证（`authCenterApiKey` / `clientId`·`clientSecret` / `product` / 服务地址）不进环境变量；**来源**显式二选一——本地文件（默认）或远端 URL（集中托管，如 OSS）。集群服务凭证由鉴权中心管理后台签发下载，第三方产品凭证由产品中心注册/轮换下发（凭证明文仅存在于签发/轮换响应，服务端只存 hash，事后无补发路径）：
 
 ```ts
 import {
@@ -278,14 +278,15 @@ const credential = loadAuthCenterCredential();
 
 const client = createAuthCenterClient({
   baseUrl: credential.authCenterUrl,
-  apiKey: credential.apiKey,
+  apiKey: credential.authCenterApiKey,
 });
 ```
 
 - 远端 fetch 失败与「缺失」同语义（`optional` → null，否则抛错）；任何消息不回显 URL（视为凭证材料）
 - 文件含明文 apiKey：本地来源加载时做启发式检查，疑似被 git 跟踪时 `console.warn` 一次（提示非保证）
-- 文件内 `expiresAt` 仅为签发时快照（auto-renew 场景会失真），仅供展示；运行时有效性以 introspect 为准
-- 轮换后旧凭证立即失效（introspect 返回 `active: false`）：更新来源内容 + 重启或调用 refresh 生效
+- 文件形态 v2（0.32 强切）：v1 字段（顶层 `apiKey` / `client.id` / `productCenter.apiKey`）不再受支持，命中即报错并附迁移指引
+- 凭证**无过期、无续期**（生命周期仅签发/吊销）；文件内 `expiresAt`（如存在）仅为签发时快照，仅供展示
+- 轮换后旧凭证立即失效（Bearer 校验直接 401，不降级放行）：更新来源内容 + 重启或调用 refresh 生效
 
 ### `/app` — 应用目录契约（AppManifest v1）
 

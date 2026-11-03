@@ -1,11 +1,14 @@
 /**
  * Token Authority Service 契约（服务凭证 / 用户 Token 共享端点）
  *
- * 单一事实源：docs/token-contract.md（共识版 v1.8：登记表为纯 token 存储，
- * 业务用户 token 不做 accountId 账户锚定，无身份票据 / isPlatform 豁免；
- * accountId 不再承载扣款语义）。
- * 消费方（用户中心 / WanyanAI）按本模块类型对接鉴权中心 /api/v1/token/*，
- * 字段命名与鉴权中心实现一致（camelCase）。
+ * 单一事实源：docs/token-contract.md（共识版 v1.9：本文件与鉴权中心**实现**对齐）。
+ * 去产品化后的三条硬事实（消费方必读）：
+ * 1. 隔离键 = **签发者凭证 id**（不是 productId）；productId 仅是不透明透传数据，
+ *    服务端不解释、不参与键位、不参与鉴权；
+ * 2. 响应**无顶层 productId**——归属语义走 `claims`（签发侧自行写入，消费方自读）；
+ * 3. 登记表不校验自报 `accountId`，其上无可信支付语义，不得作扣款/发放依据（v1.8）。
+ * 消费方（用户中心 / WanyanAI / Zrond）按本模块类型对接鉴权中心
+ * /api/v1/token/*，字段命名与鉴权中心实现一致（camelCase）。
  */
 
 // ─── 端点路径 ──────────────────────────────────────────────────────
@@ -30,14 +33,16 @@ export const TOKEN_ENDPOINTS = {
  *
  * introspect / lookup 不参与错误码（防枚举，统一 200 + { active: false }），
  * 故校验不通过的具体原因（过期 / 已吊销 / 权限不符）不在本值域内。
+ * 去产品化后 `PRODUCT_NOT_ALLOWED` / `PRODUCT_NOT_FOUND` 已不再是本服务错误码
+ * （产品隔离由签发者命名空间取代）；`/api/v1/credentials/issue|revoke` 的
+ * `CREDENTIAL_NOT_ALLOWED` / `CREDENTIAL_NOT_FOUND` 不属 token 端点，不入本值域。
  */
 export const TOKEN_ERROR_CODES = [
   'INVALID_ARGUMENT',
   'TOKEN_NOT_ACTIVE',
   'UNAUTHENTICATED',
-  'PRODUCT_NOT_ALLOWED',
-  'PRODUCT_NOT_FOUND',
   'TOKEN_NOT_FOUND',
+  'TOKEN_NOT_OWNED',
   'TOKEN_CONFLICT',
   'RATE_LIMITED',
   'INTERNAL',
@@ -57,15 +62,18 @@ export interface ApiErrorBody {
 export interface TokenIssueRequest {
   /**
    * 调用方自定义槽位标记（opaque）：登记表不解释语义，仅用作 replace 键位
-   * （同一 (productId, tag, claims.type) 至多一个 active Token）。消费方以自身身份语义
-   * 填充——用户中心填 userId，设备型产品填 deviceId；sku / client-credential 由服务端派生，调用方不传。
+   * （同一 **(签发者凭证 id, tag)** 至多一个 active Token）。消费方以自身身份语义
+   * 填充——用户中心填 userId，设备型产品填 deviceId；不填 = 无槽位（参与唯一性）。
    */
   tag?: string;
-  /** 凭证归属产品（业务侧唯一键，签发后不可变更） */
-  productId: string;
+  /**
+   * 不透明透传字段（可选）：仅当 `claims.productId` 未显式提供时由服务端并入 `claims`
+   * 存储；本服务不解释其语义、不参与隔离与键位（去产品化后归属语义完全归调用方）。
+   */
+  productId?: string;
   /** 权限域，默认空数组 */
   scope?: string[];
-  /** 自定义声明；服务凭证模式（type='client-credential'）受扁平约束严格校验 */
+  /** 自定义声明（扁平约束：值不得为对象/数组，违反 → 400）；服务端不解释任何字段语义 */
   claims?: Record<string, unknown>;
   /** 有效秒数；不填 = 不设过期时间（永不过期，响应 expiresAt 为 null） */
   ttl?: number;
@@ -84,7 +92,6 @@ export interface TokenIssueResponse {
   expiresAt: string | null;
   /** 槽位标记（opaque，回显签发时的 tag） */
   tag: string;
-  productId: string;
   scope: string[];
 }
 
@@ -97,11 +104,16 @@ export interface TokenIntrospectRequest {
 }
 
 export interface TokenLookupRequest {
-  /** 凭证公开标识（= 签发时的 token_hash = publicClaims.clientId） */
+  /** 公开标识 = 该 token 的 `token_hash`（签发响应不返回它；需由持有方自行保存） */
   id: string;
 }
 
-/** 凭证公开 claims（只读视图，命名与鉴权中心实现一致） */
+/**
+ * 公开 claims 形状（只读视图）：服务端**不解释不校验**其中任何字段——
+ * 下列命名字段是历史上「服务凭证模式」（`claims.type='client-credential'`）的形态，
+ * 该实体类型已随去产品化从鉴权中心退出（OAuth 客户端配置权威现归产品中心）；
+ * 字段保留仅为消费方历史读取兼容，新接入方应按 `claims` 自报约定读。
+ */
 export interface TokenPublicClaims {
   /** 凭证唯一标识（服务端生成 = token_hash，与顶层 id 一致） */
   clientId: string;
@@ -121,13 +133,12 @@ export interface TokenPublicClaims {
 /**
  * 校验响应（introspect / lookup 共用）：
  * - 无效 token 统一 200 + { active: false }（防枚举）；
- * - 匿名 / 凭证产品不匹配 → 公开视图（含 productId；tag 仅在 publicTag=true 时出现）；
- * - 携带有效凭证且产品匹配 → 全量视图（含 tag）。
+ * - 匿名，或携带凭证但**非该 token 的签发者** → 公开视图（tag 仅在 publicTag=true 时出现）；
+ * - 携带有效凭证且为目标 token 的签发者 → 全量视图（含 tag，claims 为公开+私有合并）。
+ * 无顶层 productId（去产品化：归属语义走 claims）。
  */
 export interface TokenIntrospectResponse {
   active: boolean;
-  /** 凭证归属产品（公开视图亦返回） */
-  productId?: string;
   scope?: string[];
   /** 过期时间（ISO 8601）；null = 永不过期 */
   expiresAt?: string | null;
@@ -157,15 +168,16 @@ export interface TokenRefreshResponse {
 // ─── Revoke ────────────────────────────────────────────────────────
 
 export interface TokenRevokeRequest {
-  /** 按 token 值吊销单个 */
+  /** 按 token 值吊销单个（须为本凭证签发；跨签发者 → 403 TOKEN_NOT_OWNED） */
   token?: string;
-  /** 按 tag+productId 批量吊销该槽位下所有活跃业务用户 token */
+  /** 按槽位批量吊销：只清**调用方自己命名空间**内该 tag 的全部活跃 token（无 productId 维度） */
   tag?: string;
-  /** 按 token 吊销时可省略（服务端从记录推导归属产品）；批量吊销必填 */
-  productId?: string;
 }
 
-/** 幂等语义：重复吊销已吊销凭证仍返回 success:true（对不存在的 token 返回 404） */
+/**
+ * 吊销 = 物理删除（无「已吊销」状态）：按 `tag` 批删对空槽位幂等（200）；
+ * 按 `token` 单删对不存在的 token（含已删过）返回 404 `TOKEN_NOT_FOUND`。
+ */
 export interface TokenRevokeResponse {
   success: boolean;
 }
